@@ -319,40 +319,108 @@ export function CreateFlowModal({ open, onOpenChange, onSave, editFlow }: Create
 
             {/* Step 3 */}
             {step === 3 && (
-              <div className="space-y-5">
-                <div className="rounded-lg border border-slate-200 divide-y divide-slate-100">
-                  <div className="p-4">
-                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Flow</p>
-                    <p className="font-semibold text-slate-900">{name}</p>
-                    <p className="text-sm text-slate-500 mt-0.5">{description}</p>
-                    {maxUses && <p className="text-xs text-slate-400 mt-1">Limit: {parseInt(maxUses).toLocaleString()} uses</p>}
+              <div className="space-y-4">
+                {/* Hero: Flow name & description */}
+                <div className="rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 p-5 text-white">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1">
+                      <h3 className="text-lg font-bold tracking-tight">{name}</h3>
+                      <p className="text-sm text-slate-300">{description}</p>
+                    </div>
+                    <span className={cn("text-[10px] px-2.5 py-1 rounded-full font-bold uppercase tracking-wider border",
+                      planBadgeColors[selectedPlan?.name || ""] || "bg-slate-100 text-slate-600 border-slate-200"
+                    )}>
+                      {selectedPlan?.name}
+                    </span>
                   </div>
-                  <div className="p-4">
-                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Plan</p>
-                    <div className="flex items-center gap-2">
-                      <span className={cn("text-xs px-2.5 py-1 rounded-full border font-semibold", planBadgeColors[selectedPlan?.name || ""] || "bg-slate-100 text-slate-600 border-slate-200")}>{selectedPlan?.name}</span>
-                      <span className="text-xs text-slate-400">Risk: {selectedPlan?.defaults?.riskLevel ?? 0} · Sanctions: {selectedPlan?.defaults?.sanctionsLevel ?? 0}</span>
+                  {maxUses && (
+                    <div className="mt-4 pt-3 border-t border-white/10 flex items-center gap-4">
+                      <div>
+                        <p className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">Usage limit</p>
+                        <p className="text-xl font-bold tabular-nums">{parseInt(maxUses).toLocaleString()}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Grid: Plan details + Compliance */}
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Plan card */}
+                  <div className="rounded-lg border border-slate-200 bg-white p-4">
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-3">Plan details</p>
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className={cn("h-9 w-9 rounded-lg bg-gradient-to-br flex items-center justify-center", planColors[selectedPlan?.name || ""] || "from-slate-500 to-slate-600")}>
+                        <Sparkles className="h-4 w-4 text-white" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-sm text-slate-900">{selectedPlan?.name}</p>
+                        <p className="text-xs text-slate-400">{selectedPlan?.intakeModules?.length || 0} modules included</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 pt-3 border-t border-slate-100">
+                      <div className="rounded-md bg-slate-50 px-3 py-2 text-center">
+                        <p className="text-lg font-bold text-slate-900">{selectedPlan?.defaults?.riskLevel ?? 0}</p>
+                        <p className="text-[10px] text-slate-400 font-medium">Risk Level</p>
+                      </div>
+                      <div className="rounded-md bg-slate-50 px-3 py-2 text-center">
+                        <p className="text-lg font-bold text-slate-900">{selectedPlan?.defaults?.sanctionsLevel ?? 0}</p>
+                        <p className="text-[10px] text-slate-400 font-medium">Sanctions</p>
+                      </div>
                     </div>
                   </div>
-                  <div className="p-4">
-                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">Modules</p>
-                    <div className="flex flex-wrap gap-2">
-                      {enabledModules.filter((key) => isModuleAvailable(key)).map((key) => {
-                        const meta = MODULE_META[key]; if (!meta) return null; const Icon = meta.icon;
-                        return (<div key={key} className={cn("inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border", meta.color)}><Icon className="h-3 w-3" />{meta.label}</div>);
-                      })}
+
+                  {/* Compliance card */}
+                  <div className="rounded-lg border border-slate-200 bg-white p-4">
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-3">Compliance</p>
+                    <div className="space-y-2.5">
+                      <div className={cn("flex items-center gap-2.5 p-2.5 rounded-lg border",
+                        fraudAvailable && fraudPreventionEnabled ? "border-blue-200 bg-blue-50/50" : "border-slate-100 bg-slate-50/50")}>
+                        <div className={cn("h-7 w-7 rounded-md flex items-center justify-center flex-shrink-0",
+                          fraudAvailable && fraudPreventionEnabled ? "bg-blue-100 text-blue-600" : "bg-slate-100 text-slate-300")}>
+                          <Shield className="h-3.5 w-3.5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={cn("text-xs font-medium", fraudAvailable && fraudPreventionEnabled ? "text-blue-900" : "text-slate-400")}>Fraud Prevention</p>
+                        </div>
+                        <span className={cn("text-[10px] font-bold uppercase",
+                          fraudAvailable && fraudPreventionEnabled ? "text-blue-600" : "text-slate-300")}>
+                          {fraudAvailable && fraudPreventionEnabled ? "On" : "Off"}
+                        </span>
+                      </div>
+                      <div className={cn("flex items-center gap-2.5 p-2.5 rounded-lg border",
+                        amlAvailable && amlPepEnabled ? "border-amber-200 bg-amber-50/50" : "border-slate-100 bg-slate-50/50")}>
+                        <div className={cn("h-7 w-7 rounded-md flex items-center justify-center flex-shrink-0",
+                          amlAvailable && amlPepEnabled ? "bg-amber-100 text-amber-600" : "bg-slate-100 text-slate-300")}>
+                          <AlertTriangle className="h-3.5 w-3.5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={cn("text-xs font-medium", amlAvailable && amlPepEnabled ? "text-amber-900" : "text-slate-400")}>AML / PEP</p>
+                        </div>
+                        <span className={cn("text-[10px] font-bold uppercase",
+                          amlAvailable && amlPepEnabled ? "text-amber-600" : "text-slate-300")}>
+                          {amlAvailable && amlPepEnabled ? "On" : "Off"}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                  <div className="p-4">
-                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Compliance</p>
-                    <div className="flex items-center gap-3">
-                      <span className={cn("text-xs px-2.5 py-1 rounded-full font-medium", fraudAvailable && fraudPreventionEnabled ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-400")}>
-                        {fraudAvailable && fraudPreventionEnabled ? "✓ Fraud Prevention" : "✕ Fraud Prevention"}
-                      </span>
-                      <span className={cn("text-xs px-2.5 py-1 rounded-full font-medium", amlAvailable && amlPepEnabled ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-400")}>
-                        {amlAvailable && amlPepEnabled ? "✓ AML/PEP Screening" : "✕ AML/PEP Screening"}
-                      </span>
-                    </div>
+                </div>
+
+                {/* Modules row */}
+                <div className="rounded-lg border border-slate-200 bg-white p-4">
+                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-3">Verification pipeline</p>
+                  <div className="flex items-center gap-1.5 overflow-x-auto">
+                    {enabledModules.filter((key) => isModuleAvailable(key)).map((key, idx, arr) => {
+                      const meta = MODULE_META[key]; if (!meta) return null; const Icon = meta.icon;
+                      return (
+                        <div key={key} className="flex items-center gap-1.5 flex-shrink-0">
+                          <div className={cn("flex items-center gap-2 px-3 py-2 rounded-lg border", meta.color)}>
+                            <Icon className="h-4 w-4" />
+                            <span className="text-xs font-semibold whitespace-nowrap">{meta.label}</span>
+                          </div>
+                          {idx < arr.length - 1 && <ArrowRight className="h-3.5 w-3.5 text-slate-300 flex-shrink-0" />}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
