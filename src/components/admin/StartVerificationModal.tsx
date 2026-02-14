@@ -17,7 +17,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { api } from "@/lib/api";
 import { fetchClientFlows } from "@/services/flow";
 import {
   Link2,
@@ -36,11 +35,10 @@ import {
   MapPin,
   Sparkles,
   Download,
-  RotateCcw,
   MessageSquare,
 } from "lucide-react";
 
-// ── Types ───────────────────────────────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────
 interface BackendFlow {
   _id: string;
   name: string;
@@ -50,7 +48,7 @@ interface BackendFlow {
   currentUses: number;
   requiredVerifications: Array<{ verificationType: string; order?: number; status: string }>;
   subscriptionPlan?: any;
-  verificationConfig?: { riskLevel?: number; sanctionsLevel?: number; fraudPrevention?: boolean; amlPepScreening?: boolean };
+  verificationConfig?: any;
 }
 
 interface StartVerificationModalProps {
@@ -59,37 +57,63 @@ interface StartVerificationModalProps {
   preselectedFlowId?: string | null;
 }
 
-// ── Constants ───────────────────────────────────────────────────────────────
+// ── Constants ────────────────────────────────────────────────────────────
 const SDK_BASE_URL = "https://web-sdk.getnobis.com";
 
-const STEP_ICONS: Record<string, React.ElementType> = {
-  phone: Phone, email: Mail, idDocument: CreditCard, selfie: ScanFace, proofOfAddress: MapPin,
-};
-
-const STEP_LABELS: Record<string, string> = {
-  phone: "Phone", email: "Email", idDocument: "ID Doc", selfie: "Selfie", proofOfAddress: "PoA",
+const STEP_META: Record<string, { icon: React.ElementType; label: string }> = {
+  phone: { icon: Phone, label: "Phone" },
+  email: { icon: Mail, label: "Email" },
+  idDocument: { icon: CreditCard, label: "ID Doc" },
+  selfie: { icon: ScanFace, label: "Selfie" },
+  proofOfAddress: { icon: MapPin, label: "PoA" },
 };
 
 type DistMethod = "link" | "qr" | "embed" | "send";
 
-const DIST_METHODS: { key: DistMethod; label: string; description: string; icon: React.ElementType }[] = [
-  { key: "link", label: "Verification Link", description: "Copy a shareable URL", icon: Link2 },
-  { key: "qr", label: "QR Code", description: "Scannable code for in-person", icon: QrCode },
-  { key: "embed", label: "HTML Embed", description: "Add to your website", icon: Code2 },
-  { key: "send", label: "Send Directly", description: "Email or SMS to applicant", icon: Send },
+const METHODS: { key: DistMethod; label: string; icon: React.ElementType }[] = [
+  { key: "link", label: "Verification Link", icon: Link2 },
+  { key: "qr", label: "QR Code", icon: QrCode },
+  { key: "embed", label: "HTML Embed", icon: Code2 },
+  { key: "send", label: "Send Directly", icon: Send },
 ];
 
-// ── Component ───────────────────────────────────────────────────────────────
+// ── QR Generator (visual placeholder) ────────────────────────────────────
+function generateQRMatrix(text: string): boolean[][] {
+  const size = 25;
+  const matrix: boolean[][] = [];
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    hash = ((hash << 5) - hash) + text.charCodeAt(i);
+    hash |= 0;
+  }
+  for (let y = 0; y < size; y++) {
+    matrix[y] = [];
+    for (let x = 0; x < size; x++) {
+      const inTL = x < 7 && y < 7;
+      const inTR = x >= size - 7 && y < 7;
+      const inBL = x < 7 && y >= size - 7;
+      if (inTL || inTR || inBL) {
+        const lx = inTL ? x : inTR ? x - (size - 7) : x;
+        const ly = inTL ? y : inTR ? y : y - (size - 7);
+        matrix[y][x] = lx === 0 || lx === 6 || ly === 0 || ly === 6 || (lx >= 2 && lx <= 4 && ly >= 2 && ly <= 4);
+      } else {
+        const seed = (hash + x * 31 + y * 37 + x * y * 13) & 0xFFFF;
+        matrix[y][x] = seed % 3 !== 0;
+      }
+    }
+  }
+  return matrix;
+}
+
+// ── Component ────────────────────────────────────────────────────────────
 export function StartVerificationModal({ open, onOpenChange, preselectedFlowId }: StartVerificationModalProps) {
-  // State
   const [flows, setFlows] = useState<BackendFlow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selectedFlowId, setSelectedFlowId] = useState<string>("");
+  const [selectedFlowId, setSelectedFlowId] = useState("");
   const [activeMethod, setActiveMethod] = useState<DistMethod>("link");
-  const [copied, setCopied] = useState(false);
-  const [copiedEmbed, setCopiedEmbed] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
 
-  // Send form
+  // Send form state
   const [sendMethod, setSendMethod] = useState<"email" | "sms">("email");
   const [sendTo, setSendTo] = useState("");
   const [sendMessage, setSendMessage] = useState("");
@@ -98,12 +122,11 @@ export function StartVerificationModal({ open, onOpenChange, preselectedFlowId }
 
   const qrRef = useRef<HTMLDivElement>(null);
 
-  // Load flows
+  // ── Load flows ──
   useEffect(() => {
     if (open) {
       loadFlows();
-      setCopied(false);
-      setCopiedEmbed(false);
+      setCopied(null);
       setSent(false);
       setSendTo("");
       setSendMessage("");
@@ -131,209 +154,161 @@ export function StartVerificationModal({ open, onOpenChange, preselectedFlowId }
     }
   };
 
-  const selectedFlow = flows.find((f) => f._id === selectedFlowId);
+  // ── Derived state ──
+  const flow = flows.find((f) => f._id === selectedFlowId);
   const flowUrl = selectedFlowId ? `${SDK_BASE_URL}/flow/${selectedFlowId}` : "";
-  const usageLeft = selectedFlow?.maxUses ? selectedFlow.maxUses - selectedFlow.currentUses : null;
+  const usageLeft = flow?.maxUses ? flow.maxUses - flow.currentUses : null;
+  const qrMatrix = flowUrl ? generateQRMatrix(flowUrl) : [];
 
-  const embedCode = `<!-- NOBIS Verification Widget -->
-<div id="nobis-verify"></div>
-<script src="${SDK_BASE_URL}/sdk.js"></script>
-<script>
-  NobisSDK.init({
-    container: '#nobis-verify',
-    flowId: '${selectedFlowId}',
-    theme: 'light',
-    onComplete: function(result) {
-      console.log('Verification complete:', result);
-    }
-  });
-</script>`;
+  const embedWidget = `<!-- NOBIS Verification Widget -->\n<div id="nobis-verify"></div>\n<script src="${SDK_BASE_URL}/sdk.js"></script>\n<script>\n  NobisSDK.init({\n    container: '#nobis-verify',\n    flowId: '${selectedFlowId}',\n    theme: 'light',\n    onComplete: function(result) {\n      console.log('Verification complete:', result);\n    }\n  });\n</script>`;
 
-  const iframeCode = `<iframe
-  src="${flowUrl}"
-  width="100%"
-  height="700"
-  frameborder="0"
-  allow="camera; microphone"
-  style="border: none; border-radius: 12px;"
-></iframe>`;
+  const embedIframe = `<iframe\n  src="${flowUrl}"\n  width="100%" height="700"\n  frameborder="0" allow="camera; microphone"\n  style="border:none; border-radius:12px;"\n></iframe>`;
 
-  // Copy helpers
-  const copyToClipboard = async (text: string, type: "link" | "embed") => {
+  // ── Helpers ──
+  const copyText = async (text: string, key: string) => {
     await navigator.clipboard.writeText(text);
-    if (type === "link") { setCopied(true); setTimeout(() => setCopied(false), 2000); }
-    if (type === "embed") { setCopiedEmbed(true); setTimeout(() => setCopiedEmbed(false), 2000); }
+    setCopied(key);
+    setTimeout(() => setCopied(null), 2000);
   };
 
-  // Send handler (mock for now)
   const handleSend = async () => {
     if (!sendTo.trim()) return;
     setSending(true);
-    // TODO: Wire to backend POST /sessions/send or similar
-    await new Promise((r) => setTimeout(r, 1200));
+    await new Promise((r) => setTimeout(r, 1200)); // TODO: wire to backend
     setSending(false);
     setSent(true);
     setTimeout(() => setSent(false), 3000);
   };
 
-  // QR Code SVG generator (simple implementation)
-  const generateQRMatrix = (text: string): boolean[][] => {
-    // Simple visual placeholder — in production use a QR library
-    const size = 25;
-    const matrix: boolean[][] = [];
-    let hash = 0;
-    for (let i = 0; i < text.length; i++) { hash = ((hash << 5) - hash) + text.charCodeAt(i); hash |= 0; }
-    for (let y = 0; y < size; y++) {
-      matrix[y] = [];
-      for (let x = 0; x < size; x++) {
-        // Finder patterns (top-left, top-right, bottom-left)
-        const inTL = x < 7 && y < 7;
-        const inTR = x >= size - 7 && y < 7;
-        const inBL = x < 7 && y >= size - 7;
-        if (inTL || inTR || inBL) {
-          const lx = inTL ? x : inTR ? x - (size - 7) : x;
-          const ly = inTL ? y : inTR ? y : y - (size - 7);
-          matrix[y][x] = (lx === 0 || lx === 6 || ly === 0 || ly === 6 || (lx >= 2 && lx <= 4 && ly >= 2 && ly <= 4));
-        } else {
-          // Data area - deterministic pseudo-random based on hash
-          const seed = (hash + x * 31 + y * 37 + x * y * 13) & 0xFFFF;
-          matrix[y][x] = seed % 3 !== 0;
-        }
-      }
-    }
-    return matrix;
+  const downloadQR = () => {
+    const svgEl = qrRef.current?.querySelector("svg");
+    if (!svgEl) return;
+    const blob = new Blob([new XMLSerializer().serializeToString(svgEl)], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `nobis-qr-${flow?.name || "flow"}.svg`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
-  const qrMatrix = flowUrl ? generateQRMatrix(flowUrl) : [];
-
+  // ── Render ──
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl p-0 gap-0 overflow-hidden rounded-xl border-0 shadow-2xl">
+      <DialogContent className="max-w-4xl p-0 gap-0 overflow-hidden rounded-xl border shadow-2xl [&>button]:hidden">
         <DialogDescription className="sr-only">Start a new verification session</DialogDescription>
 
-        {/* Header */}
-        <div className="px-8 pt-7 pb-5 bg-gradient-to-b from-slate-50 to-white border-b">
-          <DialogTitle className="text-xl font-semibold tracking-tight text-slate-900">
-            Start Verification
-          </DialogTitle>
-          <p className="text-sm text-slate-500 mt-1">
-            Generate a verification link, QR code, or embed widget for applicants
-          </p>
+        {/* ── Header ── */}
+        <div className="px-7 pt-6 pb-5 border-b bg-gradient-to-b from-slate-50/80 to-white flex items-start justify-between">
+          <div>
+            <DialogTitle className="text-lg font-semibold tracking-tight text-slate-900">Start Verification</DialogTitle>
+            <p className="text-sm text-slate-500 mt-0.5">Generate a verification link, QR code, or embed widget for applicants</p>
+          </div>
+          <button onClick={() => onOpenChange(false)} className="h-8 w-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
+          </button>
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center h-64">
-            <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+          <div className="flex items-center justify-center h-80">
+            <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
           </div>
         ) : flows.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 px-8">
-            <div className="h-12 w-12 rounded-xl bg-slate-100 flex items-center justify-center mb-3">
+          <div className="flex flex-col items-center justify-center h-80 px-8 text-center">
+            <div className="h-11 w-11 rounded-xl bg-slate-100 flex items-center justify-center mb-3">
               <Sparkles className="h-5 w-5 text-slate-400" />
             </div>
-            <p className="font-semibold text-slate-900">No active flows</p>
-            <p className="text-sm text-slate-500 mt-1">Create a flow first to start verifying applicants</p>
+            <p className="font-semibold text-slate-900 text-sm">No active flows</p>
+            <p className="text-xs text-slate-500 mt-1 max-w-xs">Create a verification flow first, then come back here to generate links and share with applicants.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-[260px_1fr] min-h-[420px]">
-            {/* Left sidebar */}
-            <div className="border-r bg-slate-50/60 p-5 space-y-5">
+          <div className="grid grid-cols-[240px_1fr] min-h-[440px] max-h-[70vh]">
+
+            {/* ── Left Sidebar ── */}
+            <div className="border-r bg-slate-50/50 p-4 flex flex-col gap-4 overflow-y-auto">
               {/* Flow selector */}
-              <div className="space-y-2">
-                <Label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Select flow</Label>
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Select flow</p>
                 <Select value={selectedFlowId} onValueChange={setSelectedFlowId}>
-                  <SelectTrigger className="bg-white border-slate-200 h-10">
+                  <SelectTrigger className="bg-white border-slate-200 h-9 text-sm">
                     <SelectValue placeholder="Choose a flow" />
                   </SelectTrigger>
                   <SelectContent>
-                    {flows.map((flow) => (
-                      <SelectItem key={flow._id} value={flow._id}>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">{flow.name}</span>
-                        </div>
+                    {flows.map((f) => (
+                      <SelectItem key={f._id} value={f._id}>
+                        {f.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
 
-              {/* Flow info card */}
-              {selectedFlow && (
-                <div className="rounded-lg border border-slate-200 bg-white p-3.5 space-y-3">
+              {/* Flow info */}
+              {flow && (
+                <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-2.5">
                   <div>
-                    <p className="font-semibold text-sm text-slate-900 truncate">{selectedFlow.name}</p>
-                    {selectedFlow.description && (
-                      <p className="text-xs text-slate-400 mt-0.5 line-clamp-2">{selectedFlow.description}</p>
+                    <p className="font-semibold text-[13px] text-slate-900 leading-tight">{flow.name}</p>
+                    {flow.description && (
+                      <p className="text-[11px] text-slate-400 mt-0.5 leading-snug line-clamp-2">{flow.description}</p>
                     )}
                   </div>
-
-                  {/* Verification steps */}
-                  <div className="flex flex-wrap gap-1.5">
-                    {selectedFlow.requiredVerifications?.map((v) => {
-                      const Icon = STEP_ICONS[v.verificationType] || CreditCard;
+                  <div className="flex flex-wrap gap-1">
+                    {flow.requiredVerifications?.map((v) => {
+                      const meta = STEP_META[v.verificationType];
+                      if (!meta) return null;
+                      const Icon = meta.icon;
                       return (
-                        <span
-                          key={v.verificationType}
-                          className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-md bg-slate-100 text-slate-600 border border-slate-200"
-                        >
-                          <Icon className="h-3 w-3" />
-                          {STEP_LABELS[v.verificationType] || v.verificationType}
+                        <span key={v.verificationType} className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-50 text-slate-600 border border-slate-150">
+                          <Icon className="h-2.5 w-2.5" />
+                          {meta.label}
                         </span>
                       );
                     })}
                   </div>
-
-                  {/* Usage stats */}
-                  <div className="pt-2 border-t border-slate-100">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-400">Sessions used</span>
-                      <span className="font-semibold text-slate-700">
-                        {selectedFlow.currentUses}{selectedFlow.maxUses ? ` / ${selectedFlow.maxUses}` : ""}
+                  <div className="pt-2 border-t border-slate-100 space-y-1">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">Sessions</span>
+                      <span className="font-semibold text-slate-700 tabular-nums">
+                        {flow.currentUses}{flow.maxUses ? ` / ${flow.maxUses}` : " / ∞"}
                       </span>
                     </div>
-                    {selectedFlow.maxUses && (
-                      <div className="mt-1.5 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                    {flow.maxUses && (
+                      <div className="h-1 rounded-full bg-slate-100 overflow-hidden">
                         <div
-                          className={cn(
-                            "h-full rounded-full transition-all",
-                            (selectedFlow.currentUses / selectedFlow.maxUses) > 0.9 ? "bg-red-500" : "bg-slate-900"
-                          )}
-                          style={{ width: `${Math.min((selectedFlow.currentUses / selectedFlow.maxUses) * 100, 100)}%` }}
+                          className={cn("h-full rounded-full", (flow.currentUses / flow.maxUses) > 0.9 ? "bg-red-500" : "bg-slate-800")}
+                          style={{ width: `${Math.min((flow.currentUses / flow.maxUses) * 100, 100)}%` }}
                         />
                       </div>
                     )}
                     {usageLeft !== null && usageLeft <= 5 && usageLeft > 0 && (
-                      <p className="text-[10px] text-amber-600 font-medium mt-1">{usageLeft} sessions remaining</p>
+                      <p className="text-[10px] text-amber-600 font-medium">{usageLeft} remaining</p>
                     )}
                     {usageLeft !== null && usageLeft <= 0 && (
-                      <p className="text-[10px] text-red-500 font-medium mt-1">No sessions remaining</p>
+                      <p className="text-[10px] text-red-500 font-medium">No sessions left</p>
                     )}
                   </div>
                 </div>
               )}
 
-              {/* Distribution method selector */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Method</Label>
-                <div className="space-y-1">
-                  {DIST_METHODS.map((m) => {
+              {/* Method selector */}
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Method</p>
+                <div className="space-y-0.5">
+                  {METHODS.map((m) => {
                     const Icon = m.icon;
-                    const isActive = activeMethod === m.key;
+                    const active = activeMethod === m.key;
                     return (
                       <button
                         key={m.key}
                         onClick={() => setActiveMethod(m.key)}
                         className={cn(
-                          "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all duration-100",
-                          isActive
-                            ? "bg-slate-900 text-white shadow-sm"
-                            : "hover:bg-slate-100 text-slate-600"
+                          "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-all text-[13px]",
+                          active ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
                         )}
                       >
-                        <Icon className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-white" : "text-slate-400")} />
-                        <div className="flex-1 min-w-0">
-                          <p className={cn("text-xs font-semibold", isActive ? "text-white" : "text-slate-700")}>{m.label}</p>
-                        </div>
-                        <ChevronRight className={cn("h-3.5 w-3.5 flex-shrink-0", isActive ? "text-white/60" : "text-transparent")} />
+                        <Icon className={cn("h-3.5 w-3.5", active ? "text-slate-300" : "text-slate-400")} />
+                        <span className={cn("font-medium flex-1", active ? "text-white" : "text-slate-700")}>{m.label}</span>
+                        {active && <ChevronRight className="h-3 w-3 text-slate-500" />}
                       </button>
                     );
                   })}
@@ -341,304 +316,238 @@ export function StartVerificationModal({ open, onOpenChange, preselectedFlowId }
               </div>
             </div>
 
-            {/* Right content area */}
-            <div className="p-6 flex flex-col">
-              {/* ── Link Method ──────────────────────────────────── */}
+            {/* ── Right Content ── */}
+            <div className="p-7 overflow-y-auto">
+
+              {/* ── LINK ── */}
               {activeMethod === "link" && (
-                <div className="flex-1 flex flex-col">
-                  <div className="mb-5">
-                    <h3 className="text-base font-semibold text-slate-900">Verification Link</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Share this link with applicants. Each person who opens it will start a unique verification session.
+                <div className="space-y-5">
+                  <div>
+                    <h3 className="text-[15px] font-semibold text-slate-900">Verification Link</h3>
+                    <p className="text-[13px] text-slate-500 mt-0.5 leading-relaxed">
+                      Share this link with applicants. Each person who opens it will start their own unique verification session.
                     </p>
                   </div>
 
-                  <div className="space-y-4 flex-1">
-                    {/* URL display */}
-                    <div className="relative">
-                      <div className="flex items-center gap-0 border border-slate-200 rounded-lg overflow-hidden bg-white">
-                        <div className="flex-1 px-4 py-3 font-mono text-sm text-slate-700 truncate bg-slate-50/50">
-                          {flowUrl}
-                        </div>
-                        <button
-                          onClick={() => copyToClipboard(flowUrl, "link")}
-                          className={cn(
-                            "px-4 py-3 border-l flex items-center gap-2 text-xs font-semibold transition-colors flex-shrink-0",
-                            copied
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                              : "bg-white text-slate-600 hover:bg-slate-50 border-slate-200"
-                          )}
-                        >
-                          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                          {copied ? "Copied" : "Copy"}
-                        </button>
-                      </div>
+                  {/* URL bar */}
+                  <div className="flex items-stretch border border-slate-200 rounded-lg overflow-hidden bg-white">
+                    <div className="flex-1 min-w-0 px-3.5 py-2.5 bg-slate-50/70">
+                      <p className="font-mono text-[13px] text-slate-700 truncate">{flowUrl}</p>
                     </div>
-
-                    {/* Info callout */}
-                    <div className="rounded-lg bg-blue-50/70 border border-blue-100 p-4">
-                      <div className="flex gap-3">
-                        <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
-                          <Link2 className="h-4 w-4 text-blue-600" />
-                        </div>
-                        <div>
-                          <p className="text-xs font-semibold text-blue-900">Multi-use link</p>
-                          <p className="text-xs text-blue-700 mt-0.5">
-                            This link can be shared multiple times. Each applicant who opens it gets a unique, one-time verification session automatically.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Open preview */}
-                    <Button
-                      variant="outline"
-                      className="gap-2 text-slate-600"
-                      onClick={() => window.open(flowUrl, "_blank")}
+                    <button
+                      onClick={() => copyText(flowUrl, "link")}
+                      className={cn(
+                        "flex items-center gap-1.5 px-4 border-l text-[12px] font-semibold transition-all shrink-0",
+                        copied === "link" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-white text-slate-600 hover:bg-slate-50 border-slate-200"
+                      )}
                     >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      Preview in new tab
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {/* ── QR Code Method ───────────────────────────────── */}
-              {activeMethod === "qr" && (
-                <div className="flex-1 flex flex-col">
-                  <div className="mb-5">
-                    <h3 className="text-base font-semibold text-slate-900">QR Code</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Display this QR code at kiosks, offices, or print on materials. Scanning opens the verification flow.
-                    </p>
+                      {copied === "link" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      {copied === "link" ? "Copied!" : "Copy"}
+                    </button>
                   </div>
 
-                  <div className="flex-1 flex flex-col items-center justify-center gap-5">
-                    {/* QR Code */}
-                    <div ref={qrRef} className="relative p-5 bg-white rounded-2xl border-2 border-slate-200 shadow-sm">
-                      <svg
-                        viewBox={`0 0 ${qrMatrix.length || 25} ${qrMatrix.length || 25}`}
-                        className="w-52 h-52"
-                        shapeRendering="crispEdges"
-                      >
-                        {qrMatrix.map((row, y) =>
-                          row.map((cell, x) =>
-                            cell ? (
-                              <rect key={`${x}-${y}`} x={x} y={y} width={1} height={1} fill="#0f172a" />
-                            ) : null
-                          )
-                        )}
-                      </svg>
-                      {/* Center logo */}
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="h-10 w-10 rounded-lg bg-white border-2 border-slate-200 flex items-center justify-center shadow-sm">
-                          <span className="text-[10px] font-black text-slate-900 tracking-tighter">N</span>
-                        </div>
-                      </div>
+                  {/* Info box */}
+                  <div className="flex gap-3 p-4 rounded-lg bg-blue-50/60 border border-blue-100">
+                    <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center shrink-0 mt-0.5">
+                      <Link2 className="h-4 w-4 text-blue-600" />
                     </div>
-
-                    <p className="text-[10px] text-slate-400 font-mono max-w-xs text-center truncate">{flowUrl}</p>
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-3">
-                      <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => {
-                        // Download QR as SVG
-                        const svgEl = qrRef.current?.querySelector("svg");
-                        if (svgEl) {
-                          const svgData = new XMLSerializer().serializeToString(svgEl);
-                          const blob = new Blob([svgData], { type: "image/svg+xml" });
-                          const url = URL.createObjectURL(blob);
-                          const a = document.createElement("a");
-                          a.href = url; a.download = `nobis-qr-${selectedFlow?.name || "flow"}.svg`; a.click();
-                          URL.revokeObjectURL(url);
-                        }
-                      }}>
-                        <Download className="h-3.5 w-3.5" />
-                        Download SVG
-                      </Button>
-                      <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => copyToClipboard(flowUrl, "link")}>
-                        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                        {copied ? "Copied" : "Copy URL"}
-                      </Button>
-                    </div>
-
-                    <div className="rounded-lg bg-slate-50 border border-slate-100 p-3 max-w-sm w-full">
-                      <p className="text-[10px] text-slate-500 text-center">
-                        For production use, integrate a QR library (e.g. <span className="font-mono text-slate-700">qrcode.react</span>) for standards-compliant codes.
+                    <div>
+                      <p className="text-[13px] font-semibold text-blue-900">Multi-use link</p>
+                      <p className="text-[12px] text-blue-700/80 leading-relaxed mt-0.5">
+                        This link can be shared unlimited times. When an applicant opens it, a unique one-time session is created automatically — the link itself never expires.
                       </p>
                     </div>
                   </div>
+
+                  <Button variant="outline" size="sm" className="gap-2 text-[13px] text-slate-600 h-9" onClick={() => window.open(flowUrl, "_blank")}>
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Preview in new tab
+                  </Button>
                 </div>
               )}
 
-              {/* ── Embed Method ──────────────────────────────────── */}
-              {activeMethod === "embed" && (
-                <div className="flex-1 flex flex-col">
-                  <div className="mb-5">
-                    <h3 className="text-base font-semibold text-slate-900">HTML Embed</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Add the verification flow directly to your website or app.
+              {/* ── QR CODE ── */}
+              {activeMethod === "qr" && (
+                <div className="space-y-5">
+                  <div>
+                    <h3 className="text-[15px] font-semibold text-slate-900">QR Code</h3>
+                    <p className="text-[13px] text-slate-500 mt-0.5 leading-relaxed">
+                      Display at kiosks, offices, or print on materials. Scanning opens the verification flow.
                     </p>
                   </div>
 
-                  <div className="space-y-4 flex-1">
-                    {/* Widget snippet */}
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <Label className="text-xs font-semibold text-slate-500">JavaScript Widget</Label>
-                        <span className="text-[9px] uppercase tracking-wider text-emerald-600 font-bold bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">Recommended</span>
-                      </div>
-                      <div className="relative rounded-lg border border-slate-200 overflow-hidden">
-                        <pre className="p-4 text-xs font-mono text-slate-700 bg-slate-50 overflow-x-auto leading-relaxed whitespace-pre-wrap break-all max-h-40">
-                          {embedCode}
-                        </pre>
-                        <div className="absolute top-2 right-2">
-                          <button
-                            onClick={() => copyToClipboard(embedCode, "embed")}
-                            className={cn(
-                              "px-2.5 py-1.5 rounded-md text-[10px] font-semibold flex items-center gap-1 transition-colors",
-                              copiedEmbed ? "bg-emerald-100 text-emerald-700" : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
-                            )}
-                          >
-                            {copiedEmbed ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                            {copiedEmbed ? "Copied" : "Copy"}
-                          </button>
+                  <div className="flex flex-col items-center py-4 gap-4">
+                    <div ref={qrRef} className="p-4 bg-white rounded-xl border border-slate-200 shadow-sm relative">
+                      <svg viewBox={`0 0 ${qrMatrix.length || 25} ${qrMatrix.length || 25}`} className="w-44 h-44" shapeRendering="crispEdges">
+                        {qrMatrix.map((row, y) => row.map((cell, x) => cell ? <rect key={`${x}-${y}`} x={x} y={y} width={1} height={1} fill="#0f172a" /> : null))}
+                      </svg>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="h-9 w-9 rounded-md bg-white border border-slate-200 flex items-center justify-center shadow-sm">
+                          <span className="text-[9px] font-black text-slate-900 tracking-tighter">N</span>
                         </div>
                       </div>
                     </div>
 
-                    {/* iFrame alternative */}
-                    <div>
-                      <Label className="text-xs font-semibold text-slate-500 mb-2 block">iFrame Alternative</Label>
-                      <div className="relative rounded-lg border border-slate-200 overflow-hidden">
-                        <pre className="p-4 text-xs font-mono text-slate-700 bg-slate-50 overflow-x-auto leading-relaxed whitespace-pre-wrap break-all max-h-28">
-                          {iframeCode}
-                        </pre>
-                        <div className="absolute top-2 right-2">
-                          <button
-                            onClick={() => copyToClipboard(iframeCode, "embed")}
-                            className="px-2.5 py-1.5 rounded-md text-[10px] font-semibold flex items-center gap-1 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
-                          >
-                            <Copy className="h-3 w-3" />
-                            Copy
-                          </button>
-                        </div>
-                      </div>
+                    <p className="text-[10px] text-slate-400 font-mono truncate max-w-[280px]">{flowUrl}</p>
+
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" className="gap-1.5 text-[12px] h-8" onClick={downloadQR}>
+                        <Download className="h-3.5 w-3.5" />
+                        Download SVG
+                      </Button>
+                      <Button variant="outline" size="sm" className="gap-1.5 text-[12px] h-8" onClick={() => copyText(flowUrl, "qr-link")}>
+                        {copied === "qr-link" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                        {copied === "qr-link" ? "Copied!" : "Copy URL"}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg bg-slate-50 border border-slate-100 px-4 py-3">
+                    <p className="text-[11px] text-slate-500 text-center leading-relaxed">
+                      For production use, integrate a QR library (e.g. <code className="font-mono text-slate-700 bg-slate-100 px-1 rounded">qrcode.react</code>) for standards-compliant codes.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* ── EMBED ── */}
+              {activeMethod === "embed" && (
+                <div className="space-y-5">
+                  <div>
+                    <h3 className="text-[15px] font-semibold text-slate-900">HTML Embed</h3>
+                    <p className="text-[13px] text-slate-500 mt-0.5 leading-relaxed">
+                      Add the verification flow directly into your website or application.
+                    </p>
+                  </div>
+
+                  {/* Widget */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-[12px] font-semibold text-slate-600">JavaScript Widget</p>
+                      <span className="text-[9px] uppercase tracking-wider font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">Recommended</span>
+                    </div>
+                    <div className="relative rounded-lg border border-slate-200 overflow-hidden">
+                      <pre className="p-4 text-[11px] font-mono text-slate-600 bg-slate-50 overflow-x-auto leading-relaxed whitespace-pre max-h-36 scrollbar-thin">{embedWidget}</pre>
+                      <button
+                        onClick={() => copyText(embedWidget, "widget")}
+                        className={cn(
+                          "absolute top-2 right-2 px-2 py-1 rounded text-[10px] font-semibold flex items-center gap-1 transition-colors",
+                          copied === "widget" ? "bg-emerald-100 text-emerald-700" : "bg-white border border-slate-200 text-slate-500 hover:bg-slate-50"
+                        )}
+                      >
+                        {copied === "widget" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                        {copied === "widget" ? "Copied!" : "Copy"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* iFrame */}
+                  <div>
+                    <p className="text-[12px] font-semibold text-slate-600 mb-2">iFrame Alternative</p>
+                    <div className="relative rounded-lg border border-slate-200 overflow-hidden">
+                      <pre className="p-4 text-[11px] font-mono text-slate-600 bg-slate-50 overflow-x-auto leading-relaxed whitespace-pre max-h-28 scrollbar-thin">{embedIframe}</pre>
+                      <button
+                        onClick={() => copyText(embedIframe, "iframe")}
+                        className="absolute top-2 right-2 px-2 py-1 rounded text-[10px] font-semibold flex items-center gap-1 bg-white border border-slate-200 text-slate-500 hover:bg-slate-50"
+                      >
+                        <Copy className="h-3 w-3" />
+                        Copy
+                      </button>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* ── Send Method ───────────────────────────────────── */}
+              {/* ── SEND ── */}
               {activeMethod === "send" && (
-                <div className="flex-1 flex flex-col">
-                  <div className="mb-5">
-                    <h3 className="text-base font-semibold text-slate-900">Send Directly</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                <div className="space-y-5">
+                  <div>
+                    <h3 className="text-[15px] font-semibold text-slate-900">Send Directly</h3>
+                    <p className="text-[13px] text-slate-500 mt-0.5 leading-relaxed">
                       Send the verification link directly to an applicant via email or SMS.
                     </p>
                   </div>
 
-                  <div className="space-y-4 flex-1">
-                    {/* Toggle email / sms */}
-                    <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg w-fit">
+                  {/* Email / SMS toggle */}
+                  <div className="flex items-center gap-0.5 p-0.5 bg-slate-100 rounded-lg w-fit">
+                    {(["email", "sms"] as const).map((m) => (
                       <button
-                        onClick={() => setSendMethod("email")}
+                        key={m}
+                        onClick={() => setSendMethod(m)}
                         className={cn(
-                          "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors",
-                          sendMethod === "email" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                          "flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-[12px] font-semibold transition-all",
+                          sendMethod === m ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
                         )}
                       >
-                        <Mail className="h-3.5 w-3.5" />
-                        Email
+                        {m === "email" ? <Mail className="h-3 w-3" /> : <MessageSquare className="h-3 w-3" />}
+                        {m === "email" ? "Email" : "SMS"}
                       </button>
-                      <button
-                        onClick={() => setSendMethod("sms")}
-                        className={cn(
-                          "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors",
-                          sendMethod === "sms" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                        )}
-                      >
-                        <MessageSquare className="h-3.5 w-3.5" />
-                        SMS
-                      </button>
-                    </div>
+                    ))}
+                  </div>
 
-                    {/* Recipient */}
+                  {/* Recipient */}
+                  <div className="space-y-1.5">
+                    <Label className="text-[13px] font-medium text-slate-700">
+                      {sendMethod === "email" ? "Email address" : "Phone number"} <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      type={sendMethod === "email" ? "email" : "tel"}
+                      placeholder={sendMethod === "email" ? "applicant@example.com" : "+1 (868) 555-0123"}
+                      value={sendTo}
+                      onChange={(e) => { setSendTo(e.target.value); setSent(false); }}
+                      className="h-10 bg-white border-slate-200 placeholder:text-slate-300 text-[13px]"
+                    />
+                  </div>
+
+                  {/* Custom message (email only) */}
+                  {sendMethod === "email" && (
                     <div className="space-y-1.5">
-                      <Label className="text-sm font-medium text-slate-700">
-                        {sendMethod === "email" ? "Email address" : "Phone number"} <span className="text-red-500">*</span>
+                      <Label className="text-[13px] font-medium text-slate-700">
+                        Custom message <span className="text-xs text-slate-400 font-normal">(optional)</span>
                       </Label>
-                      <Input
-                        type={sendMethod === "email" ? "email" : "tel"}
-                        placeholder={sendMethod === "email" ? "applicant@example.com" : "+1 (868) 555-0123"}
-                        value={sendTo}
-                        onChange={(e) => { setSendTo(e.target.value); setSent(false); }}
-                        className="h-11 bg-white border-slate-200 placeholder:text-slate-300"
+                      <Textarea
+                        placeholder="Add a personal note to the verification email..."
+                        value={sendMessage}
+                        onChange={(e) => setSendMessage(e.target.value)}
+                        rows={2}
+                        className="bg-white border-slate-200 placeholder:text-slate-300 resize-none text-[13px]"
                       />
                     </div>
+                  )}
 
-                    {/* Custom message */}
-                    {sendMethod === "email" && (
-                      <div className="space-y-1.5">
-                        <Label className="text-sm font-medium text-slate-700">Custom message <span className="text-xs text-slate-400 font-normal">(optional)</span></Label>
-                        <Textarea
-                          placeholder="Add a personal note to the verification email..."
-                          value={sendMessage}
-                          onChange={(e) => setSendMessage(e.target.value)}
-                          rows={3}
-                          className="bg-white border-slate-200 placeholder:text-slate-300 resize-none"
-                        />
-                      </div>
-                    )}
-
-                    {/* Preview */}
-                    <div className="rounded-lg bg-slate-50 border border-slate-100 p-4">
-                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Preview</p>
-                      <div className="space-y-1 text-xs text-slate-600">
-                        <p>
-                          {sendMethod === "email" ? "Subject: " : ""}
-                          <span className="font-medium text-slate-900">Complete your identity verification</span>
-                        </p>
-                        {sendMessage && <p className="text-slate-500 italic">"{sendMessage}"</p>}
-                        <p className="font-mono text-blue-600 text-[10px] mt-1 truncate">{flowUrl}</p>
-                      </div>
-                    </div>
-
-                    {/* Send button */}
-                    <Button
-                      onClick={handleSend}
-                      disabled={!sendTo.trim() || sending}
-                      className={cn(
-                        "gap-2 w-full h-11 font-semibold",
-                        sent
-                          ? "bg-emerald-600 hover:bg-emerald-700"
-                          : "bg-slate-900 hover:bg-slate-800"
-                      )}
-                    >
-                      {sending ? (
-                        <><Loader2 className="h-4 w-4 animate-spin" />Sending...</>
-                      ) : sent ? (
-                        <><Check className="h-4 w-4" />Sent successfully</>
-                      ) : (
-                        <><Send className="h-4 w-4" />Send {sendMethod === "email" ? "email" : "SMS"}</>
-                      )}
-                    </Button>
+                  {/* Preview */}
+                  <div className="rounded-lg bg-slate-50 border border-slate-100 p-3.5 space-y-1.5">
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Preview</p>
+                    <p className="text-[13px] font-medium text-slate-900">Complete your identity verification</p>
+                    {sendMessage && <p className="text-[12px] text-slate-500 italic leading-relaxed">"{sendMessage}"</p>}
+                    <p className="font-mono text-[11px] text-blue-600 truncate">{flowUrl}</p>
                   </div>
+
+                  {/* Send button */}
+                  <Button
+                    onClick={handleSend}
+                    disabled={!sendTo.trim() || sending}
+                    className={cn(
+                      "w-full h-10 text-[13px] font-semibold gap-2",
+                      sent ? "bg-emerald-600 hover:bg-emerald-700" : "bg-slate-900 hover:bg-slate-800"
+                    )}
+                  >
+                    {sending ? <><Loader2 className="h-4 w-4 animate-spin" />Sending...</>
+                      : sent ? <><Check className="h-4 w-4" />Sent successfully</>
+                      : <><Send className="h-4 w-4" />Send {sendMethod === "email" ? "email" : "SMS"}</>}
+                  </Button>
                 </div>
               )}
             </div>
           </div>
         )}
 
-        {/* Footer */}
-        <div className="px-8 py-4 border-t bg-slate-50/60 flex items-center justify-between">
-          <p className="text-[10px] text-slate-400">
-            {selectedFlow && (
-              <>Flow ID: <span className="font-mono">{selectedFlowId}</span></>
-            )}
+        {/* ── Footer ── */}
+        <div className="px-7 py-3.5 border-t bg-slate-50/50 flex items-center justify-between">
+          <p className="text-[10px] text-slate-400 font-mono truncate max-w-[300px]">
+            {flow && <>Flow: {selectedFlowId}</>}
           </p>
-          <Button variant="ghost" onClick={() => onOpenChange(false)} className="text-slate-500 hover:text-slate-700">
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} className="text-slate-500 hover:text-slate-700 text-[13px] h-8">
             Done
           </Button>
         </div>
