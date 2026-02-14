@@ -318,7 +318,7 @@ export function AdminSidebar({ mobileOpen, onMobileOpenChange }: AdminSidebarPro
       <Sheet open={mobileOpen} onOpenChange={onMobileOpenChange}>
         <SheetContent 
           side="left" 
-          className="sidebar-gradient w-[300px] p-0 border-r border-white/[0.06] flex flex-col"
+          className="sidebar-gradient !bg-transparent w-[300px] p-0 border-r border-white/[0.06] flex flex-col"
         >
           {sidebarContent(true)}
         </SheetContent>
