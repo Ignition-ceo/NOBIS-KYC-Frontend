@@ -152,9 +152,18 @@ export default function Flows() {
     ? flows
     : flows.filter((f) => f.status === statusFilter);
 
+  // Map frontend module keys to backend verification type keys
+  const MODULE_TO_BACKEND: Record<string, string> = {
+    phone_verification: "phone",
+    email_verification: "email",
+    identity_document: "idDocument",
+    selfie: "selfie",
+    poa_verification: "proofOfAddress",
+  };
+
   const handleSaveFlow = async (flow: Flow) => {
     try {
-      const exists = flows.find((f) => f.id === flow.id);
+      const exists = flows.find((f) => f.id === flow.id && !flow.id.startsWith("flow_"));
       if (exists) {
         await updateFlowService({ id: flow.id, name: flow.name, description: flow.description });
         toast.success("Flow updated successfully");
@@ -167,7 +176,7 @@ export default function Flows() {
           requiredVerifications: flow.modules
             ?.filter((m) => m.enabled)
             .map((m, idx) => ({
-              verificationType: m.module_key,
+              verificationType: MODULE_TO_BACKEND[m.module_key] || m.module_key,
               order: idx + 1,
               status: "pending",
             })) || [],
