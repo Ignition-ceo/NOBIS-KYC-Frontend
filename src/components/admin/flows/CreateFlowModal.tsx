@@ -59,6 +59,10 @@ const MODULE_META: Record<string, { icon: React.ElementType; label: string; desc
   poa_verification: { icon: MapPin, label: "Proof of Address", description: "Utility bill or bank statement", color: "text-rose-600 bg-rose-50 border-rose-200" },
 };
 
+// Display order: Phone, Email first, then ID Doc, Selfie, PoA
+const MODULE_DISPLAY_ORDER = ["phone_verification", "email_verification", "identity_document", "selfie", "poa_verification"];
+const sortModules = (keys: string[]) => keys.sort((a, b) => (MODULE_DISPLAY_ORDER.indexOf(a) === -1 ? 99 : MODULE_DISPLAY_ORDER.indexOf(a)) - (MODULE_DISPLAY_ORDER.indexOf(b) === -1 ? 99 : MODULE_DISPLAY_ORDER.indexOf(b)));
+
 interface CreateFlowModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -137,7 +141,8 @@ export function CreateFlowModal({ open, onOpenChange, onSave, editFlow }: Create
     if (!name.trim() || !description.trim() || !selectedPlanId) return;
     const now = new Date().toISOString();
     const flowId = editFlow?.id || `flow_${Date.now()}`;
-    const modules: FlowModule[] = MODULE_CATALOG.map((m, idx) => ({
+    const sortedCatalog = [...MODULE_CATALOG].sort((a, b) => (MODULE_DISPLAY_ORDER.indexOf(a.module_key) === -1 ? 99 : MODULE_DISPLAY_ORDER.indexOf(a.module_key)) - (MODULE_DISPLAY_ORDER.indexOf(b.module_key) === -1 ? 99 : MODULE_DISPLAY_ORDER.indexOf(b.module_key)));
+    const modules: FlowModule[] = sortedCatalog.map((m, idx) => ({
       id: editFlow?.modules?.[idx]?.id || `fm_${flowId}_${idx}`, flow_id: flowId, module_key: m.module_key,
       enabled: enabledModules.includes(m.module_key) && isModuleAvailable(m.module_key),
     }));
@@ -254,7 +259,7 @@ export function CreateFlowModal({ open, onOpenChange, onSave, editFlow }: Create
                 <div className="space-y-3">
                   <Label className="text-sm font-medium text-slate-700">Verification modules</Label>
                   <div className="grid grid-cols-1 gap-2">
-                    {MODULE_CATALOG.map((module) => {
+                    {[...MODULE_CATALOG].sort((a, b) => (MODULE_DISPLAY_ORDER.indexOf(a.module_key) === -1 ? 99 : MODULE_DISPLAY_ORDER.indexOf(a.module_key)) - (MODULE_DISPLAY_ORDER.indexOf(b.module_key) === -1 ? 99 : MODULE_DISPLAY_ORDER.indexOf(b.module_key))).map((module) => {
                       const meta = MODULE_META[module.module_key]; if (!meta) return null;
                       const Icon = meta.icon;
                       const isAvailable = isModuleAvailable(module.module_key);
@@ -409,7 +414,7 @@ export function CreateFlowModal({ open, onOpenChange, onSave, editFlow }: Create
                 <div className="rounded-lg border border-slate-200 bg-white p-4">
                   <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-3">Verification pipeline</p>
                   <div className="flex items-center gap-1.5 overflow-x-auto">
-                    {enabledModules.filter((key) => isModuleAvailable(key)).map((key, idx, arr) => {
+                    {sortModules(enabledModules.filter((key) => isModuleAvailable(key))).map((key, idx, arr) => {
                       const meta = MODULE_META[key]; if (!meta) return null; const Icon = meta.icon;
                       return (
                         <div key={key} className="flex items-center gap-1.5 flex-shrink-0">
