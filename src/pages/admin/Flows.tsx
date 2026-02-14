@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
 import {
   Plus,
@@ -14,6 +14,7 @@ import {
   Phone,
   MapPin,
   ScanFace,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,97 +56,135 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { CreateFlowModal } from "@/components/admin/flows/CreateFlowModal";
 import {
   Flow,
-  DEMO_FLOWS,
   SUBSCRIPTION_PLANS,
   MODULE_CATALOG,
 } from "@/types/flows";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-
-const STORAGE_KEY = "nobis_flows";
+import {
+  fetchClientFlows,
+  createFlowService,
+  updateFlowService,
+  deleteFlowService,
+} from "@/services/flow";
 
 // Module icons mapping
 const MODULE_ICONS: Record<string, React.ElementType> = {
   identity_document: CreditCard,
+  idDocument: CreditCard,
   selfie: ScanFace,
   email_verification: Mail,
+  email: Mail,
   phone_verification: Phone,
+  phone: Phone,
   poa_verification: MapPin,
+  proofOfAddress: MapPin,
 };
 
-function getStoredFlows(): Flow[] {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-  } catch (e) {
-    console.error("Error reading flows from localStorage", e);
-  }
-  return DEMO_FLOWS;
-}
-
-function storeFlows(flows: Flow[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(flows));
+// Map backend flow data to frontend Flow type
+function mapBackendFlow(backendFlow: any): Flow {
+  return {
+    id: backendFlow._id || backendFlow.id,
+    tenant_id: backendFlow.clientId || "",
+    name: backendFlow.name || "",
+    description: backendFlow.description || "",
+    plan_id: backendFlow.subscriptionPlan?._id || backendFlow.subscriptionPlan || "",
+    max_uses: backendFlow.maxUses ?? null,
+    uses_consumed: backendFlow.currentUses || 0,
+    status: backendFlow.isActive === false ? "inactive" : "active",
+    fraud_prevention_enabled: backendFlow.verificationConfig?.fraudPrevention ?? false,
+    aml_pep_enabled: backendFlow.verificationConfig?.amlPepScreening ?? false,
+    created_at: backendFlow.createdAt || new Date().toISOString(),
+    updated_at: backendFlow.updatedAt || new Date().toISOString(),
+    plan: backendFlow.subscriptionPlan
+      ? {
+          id: backendFlow.subscriptionPlan._id || backendFlow.subscriptionPlan,
+          name: backendFlow.subscriptionPlan.name || "Unknown",
+          description: backendFlow.subscriptionPlan.description || "",
+          included_modules_json: backendFlow.subscriptionPlan.intakeModules || [],
+          includes_text: "",
+          risk_level_count: 0,
+          sanctions_level_count: 0,
+          created_at: "",
+        }
+      : undefined,
+    modules: backendFlow.requiredVerifications?.map((v: any, idx: number) => ({
+      id: `fm_${backendFlow._id}_${idx}`,
+      flow_id: backendFlow._id || backendFlow.id,
+      module_key: v.verificationType || v.module_key,
+      enabled: true,
+    })) || [],
+  };
 }
 
 export default function Flows() {
-  const [flows, setFlows] = useState<Flow[]>(getStoredFlows);
+  const [flows, setFlows] = useState<Flow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [planFilter, setPlanFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingFlow, setEditingFlow] = useState<Flow | null>(null);
   const [deleteFlow, setDeleteFlow] = useState<Flow | null>(null);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
-  // Filter and sort flows
-  const filteredFlows = useMemo(() => {
-    let result = [...flows];
-
-    // Search filter
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (f) =>
-          f.name.toLowerCase().includes(q) ||
-          f.description?.toLowerCase().includes(q)
-      );
+  const loadFlows = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await fetchClientFlows(page, searchQuery);
+      const mapped = (data.flows || []).map(mapBackendFlow);
+      setFlows(mapped);
+      setTotal(data.total || 0);
+    } catch (err) {
+      console.error("Failed to load flows:", err);
+      toast.error("Failed to load flows");
+    } finally {
+      setLoading(false);
     }
+  }, [page, searchQuery]);
 
-    // Plan filter
-    if (planFilter !== "all") {
-      result = result.filter((f) => f.plan_id === planFilter);
-    }
+  useEffect(() => {
+    loadFlows();
+  }, [loadFlows]);
 
-    // Status filter
-    if (statusFilter !== "all") {
-      result = result.filter((f) => f.status === statusFilter);
-    }
+  // Filter locally for status (API doesn't support status filter)
+  const filteredFlows = statusFilter === "all"
+    ? flows
+    : flows.filter((f) => f.status === statusFilter);
 
-    // Sort by updated_at desc
-    result.sort(
-      (a, b) =>
-        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-    );
-
-    return result;
-  }, [flows, searchQuery, planFilter, statusFilter]);
-
-  const handleSaveFlow = (flow: Flow) => {
-    setFlows((prev) => {
-      const exists = prev.find((f) => f.id === flow.id);
-      let updated: Flow[];
+  const handleSaveFlow = async (flow: Flow) => {
+    try {
+      const exists = flows.find((f) => f.id === flow.id);
       if (exists) {
-        updated = prev.map((f) => (f.id === flow.id ? flow : f));
+        await updateFlowService({ id: flow.id, name: flow.name, description: flow.description });
         toast.success("Flow updated successfully");
       } else {
-        updated = [flow, ...prev];
+        await createFlowService({
+          name: flow.name,
+          description: flow.description,
+          subscriptionPlan: flow.plan_id,
+          maxUses: flow.max_uses,
+          requiredVerifications: flow.modules
+            ?.filter((m) => m.enabled)
+            .map((m, idx) => ({
+              verificationType: m.module_key,
+              order: idx + 1,
+              status: "pending",
+            })) || [],
+          verificationConfig: {
+            fraudPrevention: flow.fraud_prevention_enabled,
+            amlPepScreening: flow.aml_pep_enabled,
+          },
+        });
         toast.success("Flow created successfully");
       }
-      storeFlows(updated);
-      return updated;
-    });
-    setEditingFlow(null);
+      setEditingFlow(null);
+      setModalOpen(false);
+      loadFlows();
+    } catch (err: any) {
+      console.error("Failed to save flow:", err);
+      toast.error(err?.response?.data?.message || "Failed to save flow");
+    }
   };
 
   const handleEdit = (flow: Flow) => {
@@ -153,53 +192,29 @@ export default function Flows() {
     setModalOpen(true);
   };
 
-  const handleDuplicate = (flow: Flow) => {
-    const duplicated: Flow = {
-      ...flow,
-      id: `flow_${Date.now()}`,
-      name: `${flow.name} (Copy)`,
-      uses_consumed: 0,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      modules: flow.modules?.map((m, idx) => ({
-        ...m,
-        id: `fm_${Date.now()}_${idx}`,
-        flow_id: `flow_${Date.now()}`,
-      })),
-    };
-    setFlows((prev) => {
-      const updated = [duplicated, ...prev];
-      storeFlows(updated);
-      return updated;
-    });
-    toast.success(`Flow "${flow.name}" duplicated`);
+  const handleToggleStatus = async (flow: Flow) => {
+    try {
+      const newActive = flow.status === "active" ? false : true;
+      await updateFlowService({ id: flow.id, isActive: newActive });
+      toast.success(
+        `Flow "${flow.name}" ${newActive ? "activated" : "deactivated"}`
+      );
+      loadFlows();
+    } catch (err) {
+      toast.error("Failed to update flow status");
+    }
   };
 
-  const handleToggleStatus = (flow: Flow) => {
-    const newStatus = flow.status === "active" ? "inactive" : "active";
-    setFlows((prev) => {
-      const updated = prev.map((f) =>
-        f.id === flow.id
-          ? { ...f, status: newStatus, updated_at: new Date().toISOString() }
-          : f
-      ) as Flow[];
-      storeFlows(updated);
-      return updated;
-    });
-    toast.success(
-      `Flow "${flow.name}" ${newStatus === "active" ? "activated" : "deactivated"}`
-    );
-  };
-
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deleteFlow) return;
-    setFlows((prev) => {
-      const updated = prev.filter((f) => f.id !== deleteFlow.id);
-      storeFlows(updated);
-      return updated;
-    });
-    toast.success(`Flow "${deleteFlow.name}" deleted`);
-    setDeleteFlow(null);
+    try {
+      await deleteFlowService(deleteFlow.id);
+      toast.success(`Flow "${deleteFlow.name}" deleted`);
+      setDeleteFlow(null);
+      loadFlows();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "Failed to delete flow");
+    }
   };
 
   const handleCreateNew = () => {
@@ -207,10 +222,19 @@ export default function Flows() {
     setModalOpen(true);
   };
 
-  const getPlanBadge = (planId: string) => {
+  const getPlanBadge = (planId: string, flow: Flow) => {
+    if (flow.plan?.name) return flow.plan.name;
     const plan = SUBSCRIPTION_PLANS.find((p) => p.id === planId);
     return plan?.name || planId;
   };
+
+  if (loading && flows.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -239,19 +263,6 @@ export default function Flows() {
             className="pl-9"
           />
         </div>
-        <Select value={planFilter} onValueChange={setPlanFilter}>
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="All Plans" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Plans</SelectItem>
-            {SUBSCRIPTION_PLANS.map((plan) => (
-              <SelectItem key={plan.id} value={plan.id}>
-                {plan.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-[140px]">
             <SelectValue placeholder="All Status" />
@@ -281,7 +292,9 @@ export default function Flows() {
             {filteredFlows.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="h-32 text-center">
-                  <p className="text-muted-foreground">No flows found</p>
+                  <p className="text-muted-foreground">
+                    {loading ? "Loading..." : "No flows found"}
+                  </p>
                 </TableCell>
               </TableRow>
             ) : (
@@ -337,7 +350,7 @@ export default function Flows() {
                   {/* Plan Badge */}
                   <TableCell>
                     <Badge variant="outline" className="text-xs">
-                      {getPlanBadge(flow.plan_id)}
+                      {getPlanBadge(flow.plan_id, flow)}
                     </Badge>
                   </TableCell>
 
@@ -372,11 +385,7 @@ export default function Flows() {
                   <TableCell>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                        >
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
@@ -385,13 +394,7 @@ export default function Flows() {
                           <Pencil className="h-4 w-4 mr-2" />
                           Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleDuplicate(flow)}>
-                          <Copy className="h-4 w-4 mr-2" />
-                          Duplicate
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => handleToggleStatus(flow)}
-                        >
+                        <DropdownMenuItem onClick={() => handleToggleStatus(flow)}>
                           <Power className="h-4 w-4 mr-2" />
                           {flow.status === "active" ? "Deactivate" : "Activate"}
                         </DropdownMenuItem>
@@ -412,6 +415,31 @@ export default function Flows() {
           </TableBody>
         </Table>
       </div>
+
+      {/* Pagination */}
+      {total > 10 && (
+        <div className="flex items-center justify-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            ← Previous
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            Page {page} of {Math.ceil(total / 10)}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={page >= Math.ceil(total / 10)}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            Next →
+          </Button>
+        </div>
+      )}
 
       {/* Create/Edit Modal */}
       <CreateFlowModal

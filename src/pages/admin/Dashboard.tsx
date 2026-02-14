@@ -1,16 +1,111 @@
-import { LayoutGrid, CheckCircle2, Clock, XCircle } from "lucide-react";
+import { useEffect, useState } from "react";
+import { LayoutGrid, CheckCircle2, Clock, XCircle, Loader2 } from "lucide-react";
 import { StatCard } from "@/components/admin/StatCard";
 import { TransactionsChart } from "@/components/admin/TransactionsChart";
 import { RecentVerifications } from "@/components/admin/RecentVerifications";
 import { Button } from "@/components/ui/button";
+import { fetchDashboardStats } from "@/services/dashboard";
 
-const recentVerifications = [
-  { id: "1", name: "JESTON J LETT", date: "17/01/2026", status: "verified" as const },
-  { id: "2", name: "TEST R BIRDE", date: "17/01/2026", status: "pending" as const },
-  { id: "3", name: "CALVIN LEON", date: "17/01/2026", status: "pending" as const },
-];
+interface DashboardData {
+  totalVerifications: number;
+  approvedVerifications: number;
+  pendingVerifications: number;
+  rejectedVerifications: number;
+  transactionsUsed: number;
+  transactionLimit: number;
+  monthlyGrowth: {
+    total: number;
+    approved: number;
+    pending: number;
+    rejected: number;
+  };
+  currentMonthStats: {
+    total: number;
+    approved: number;
+    pending: number;
+    rejected: number;
+  };
+  lastMonthStats: {
+    total: number;
+    approved: number;
+    pending: number;
+    rejected: number;
+  };
+  recentApplicants: Array<{
+    _id: string;
+    name: string;
+    image: string | null;
+    createdAt: string;
+    updatedAt: string;
+    status: string;
+    riskValue: number | null;
+    riskStatus: string | null;
+  }>;
+  planBreakdownStats: {
+    monthlyProgress: Array<{ month: string; [planName: string]: number | string }>;
+    legend: Array<{ name: string; count: number; color: string; description: string }>;
+  };
+}
+
+const mapStatus = (status: string): "verified" | "pending" | "rejected" => {
+  switch (status) {
+    case "verified":
+      return "verified";
+    case "rejected":
+      return "rejected";
+    default:
+      return "pending";
+  }
+};
 
 export default function Dashboard() {
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadStats = async () => {
+      try {
+        setLoading(true);
+        const stats = await fetchDashboardStats();
+        setData(stats);
+      } catch (err) {
+        console.error("Failed to load dashboard stats:", err);
+        setError("Failed to load dashboard data");
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadStats();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-muted-foreground">{error || "No data available"}</p>
+      </div>
+    );
+  }
+
+  const recentVerifications = data.recentApplicants.map((a) => ({
+    id: a._id,
+    name: a.name || "Unknown",
+    date: new Date(a.createdAt).toLocaleDateString("en-GB"),
+    status: mapStatus(a.status),
+    image: a.image,
+  }));
+
+  const growthLabel = (value: number) =>
+    value >= 0 ? `+${value}%` : `${value}%`;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -30,100 +125,97 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard
           title="Total Verifications"
-          value={67}
-          change="+100%"
+          value={data.totalVerifications}
+          change={growthLabel(data.monthlyGrowth.total)}
           icon={LayoutGrid}
           variant="blue"
         />
         <StatCard
           title="Approved Verifications"
-          value={11}
-          change="+100%"
+          value={data.approvedVerifications}
+          change={growthLabel(data.monthlyGrowth.approved)}
           icon={CheckCircle2}
           variant="green"
         />
         <StatCard
           title="Pending Verifications"
-          value={55}
-          change="+100%"
+          value={data.pendingVerifications}
+          change={growthLabel(data.monthlyGrowth.pending)}
           icon={Clock}
           variant="yellow"
         />
         <StatCard
           title="Rejected Verifications"
-          value={1}
-          change="+100%"
+          value={data.rejectedVerifications}
+          change={growthLabel(data.monthlyGrowth.rejected)}
           icon={XCircle}
           variant="red"
         />
-        <TransactionsChart used={67} />
+        <TransactionsChart used={data.transactionsUsed} total={data.transactionLimit} />
       </div>
 
       {/* Bottom Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Verification Statistics */}
+        {/* Verification Statistics - Donut Chart */}
         <div className="stat-card lg:col-span-1">
           <h3 className="text-lg font-semibold text-foreground mb-4">Verification Statistics</h3>
           <div className="flex items-center justify-center h-48">
             <div className="relative w-40 h-40">
-              <svg className="w-full h-full" viewBox="0 0 100 100">
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="40"
-                  fill="none"
-                  stroke="hsl(38, 92%, 50%)"
-                  strokeWidth="12"
-                />
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="40"
-                  fill="none"
-                  stroke="hsl(142, 71%, 45%)"
-                  strokeWidth="12"
-                  strokeDasharray="50 200"
-                  strokeDashoffset="0"
-                />
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="40"
-                  fill="none"
-                  stroke="hsl(217, 91%, 50%)"
-                  strokeWidth="12"
-                  strokeDasharray="175 200"
-                  strokeDashoffset="-50"
-                />
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="40"
-                  fill="none"
-                  stroke="hsl(0, 84%, 60%)"
-                  strokeWidth="12"
-                  strokeDasharray="5 200"
-                  strokeDashoffset="-225"
-                />
-              </svg>
+              {(() => {
+                const total = data.totalVerifications || 1;
+                const approvedPct = (data.approvedVerifications / total) * 251;
+                const pendingPct = (data.pendingVerifications / total) * 251;
+                const rejectedPct = (data.rejectedVerifications / total) * 251;
+                let offset = 0;
+                return (
+                  <svg className="w-full h-full" viewBox="0 0 100 100">
+                    {/* Pending (yellow) */}
+                    <circle
+                      cx="50" cy="50" r="40" fill="none"
+                      stroke="hsl(38, 92%, 50%)" strokeWidth="12"
+                      strokeDasharray={`${pendingPct} ${251 - pendingPct}`}
+                      strokeDashoffset={`${-(offset)}`}
+                      transform="rotate(-90 50 50)"
+                    />
+                    {(() => { offset += pendingPct; return null; })()}
+                    {/* Approved (green) */}
+                    <circle
+                      cx="50" cy="50" r="40" fill="none"
+                      stroke="hsl(142, 71%, 45%)" strokeWidth="12"
+                      strokeDasharray={`${approvedPct} ${251 - approvedPct}`}
+                      strokeDashoffset={`${-(offset)}`}
+                      transform="rotate(-90 50 50)"
+                    />
+                    {(() => { offset += approvedPct; return null; })()}
+                    {/* Rejected (red) */}
+                    <circle
+                      cx="50" cy="50" r="40" fill="none"
+                      stroke="hsl(0, 84%, 60%)" strokeWidth="12"
+                      strokeDasharray={`${rejectedPct} ${251 - rejectedPct}`}
+                      strokeDashoffset={`${-(offset)}`}
+                      transform="rotate(-90 50 50)"
+                    />
+                  </svg>
+                );
+              })()}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2 mt-4">
             <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-primary" />
-              <span className="text-sm text-muted-foreground">Pending</span>
+              <span className="w-3 h-3 rounded-full bg-warning" />
+              <span className="text-sm text-muted-foreground">Pending ({data.pendingVerifications})</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-destructive" />
-              <span className="text-sm text-muted-foreground">Rejected</span>
+              <span className="text-sm text-muted-foreground">Rejected ({data.rejectedVerifications})</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-success" />
-              <span className="text-sm text-muted-foreground">Approved</span>
+              <span className="text-sm text-muted-foreground">Approved ({data.approvedVerifications})</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-warning" />
-              <span className="text-sm text-muted-foreground">Total</span>
+              <span className="w-3 h-3 rounded-full bg-primary" />
+              <span className="text-sm text-muted-foreground">Total ({data.totalVerifications})</span>
             </div>
           </div>
         </div>
@@ -132,33 +224,42 @@ export default function Dashboard() {
         <div className="stat-card lg:col-span-1">
           <h3 className="text-lg font-semibold text-foreground mb-4">Plan Breakdown</h3>
           <div className="h-48 flex items-end justify-center gap-4 pb-4">
-            <div className="flex flex-col items-center gap-1">
-              <div className="w-12 bg-warning rounded-t" style={{ height: "20px" }} />
-              <span className="text-xs text-muted-foreground">Sep</span>
-            </div>
-            <div className="flex flex-col items-center gap-1">
-              <div className="w-12 bg-warning rounded-t" style={{ height: "30px" }} />
-              <span className="text-xs text-muted-foreground">Oct</span>
-            </div>
-            <div className="flex flex-col items-center gap-1">
-              <div className="w-12 bg-warning rounded-t" style={{ height: "60px" }} />
-              <span className="text-xs text-muted-foreground">Dec</span>
-            </div>
-            <div className="flex flex-col items-center gap-1">
-              <div className="w-12 bg-warning rounded-t" style={{ height: "120px" }} />
-              <span className="text-xs text-muted-foreground">Jan</span>
-            </div>
+            {data.planBreakdownStats.monthlyProgress.slice(-4).map((month) => {
+              const total = Object.entries(month)
+                .filter(([key]) => key !== "month")
+                .reduce((sum, [, val]) => sum + (typeof val === "number" ? val : 0), 0);
+              const maxHeight = 120;
+              const height = Math.max(total * 4, 8);
+              return (
+                <div key={month.month} className="flex flex-col items-center gap-1">
+                  <div
+                    className="w-12 bg-warning rounded-t"
+                    style={{ height: `${Math.min(height, maxHeight)}px` }}
+                  />
+                  <span className="text-xs text-muted-foreground">{month.month}</span>
+                </div>
+              );
+            })}
           </div>
-          <div className="flex items-center gap-3 pt-4 border-t border-border">
-            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-              <CheckCircle2 className="h-5 w-5 text-primary" />
+          {data.planBreakdownStats.legend.length > 0 && (
+            <div className="space-y-2 pt-4 border-t border-border">
+              {data.planBreakdownStats.legend.map((plan) => (
+                <div key={plan.name} className="flex items-center gap-3">
+                  <div
+                    className="w-10 h-10 rounded-lg flex items-center justify-center"
+                    style={{ backgroundColor: `${plan.color}20` }}
+                  >
+                    <CheckCircle2 className="h-5 w-5" style={{ color: plan.color }} />
+                  </div>
+                  <div>
+                    <p className="font-medium text-foreground">{plan.name}</p>
+                    <p className="text-xs text-muted-foreground">{plan.description}</p>
+                  </div>
+                  <span className="ml-auto font-bold text-foreground">{plan.count}</span>
+                </div>
+              ))}
             </div>
-            <div>
-              <p className="font-medium text-foreground">SimpleKYC</p>
-              <p className="text-xs text-muted-foreground">IDV with additional compliance</p>
-            </div>
-            <span className="ml-auto font-bold text-foreground">63</span>
-          </div>
+          )}
         </div>
 
         {/* Recent Verifications */}
