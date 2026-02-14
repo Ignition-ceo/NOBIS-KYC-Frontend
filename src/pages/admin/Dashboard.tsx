@@ -3,6 +3,7 @@ import { LayoutGrid, CheckCircle2, Clock, XCircle, Loader2 } from "lucide-react"
 import { StatCard } from "@/components/admin/StatCard";
 import { TransactionsChart } from "@/components/admin/TransactionsChart";
 import { RecentVerifications } from "@/components/admin/RecentVerifications";
+import { StartVerificationModal } from "@/components/admin/StartVerificationModal";
 import { Button } from "@/components/ui/button";
 import { fetchDashboardStats } from "@/services/dashboard";
 
@@ -62,6 +63,7 @@ export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [verifyModalOpen, setVerifyModalOpen] = useState(false);
 
   useEffect(() => {
     const loadStats = async () => {
@@ -116,7 +118,7 @@ export default function Dashboard() {
             Monitor your verification statistics and transaction usage
           </p>
         </div>
-        <Button className="bg-primary hover:bg-primary/90">
+        <Button className="bg-primary hover:bg-primary/90" onClick={() => setVerifyModalOpen(true)}>
           Start Verification
         </Button>
       </div>
@@ -265,6 +267,8 @@ export default function Dashboard() {
         {/* Recent Verifications */}
         <RecentVerifications verifications={recentVerifications} />
       </div>
+
+      <StartVerificationModal open={verifyModalOpen} onOpenChange={setVerifyModalOpen} />
     </div>
   );
 }

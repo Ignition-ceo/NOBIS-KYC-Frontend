@@ -15,6 +15,7 @@ import {
   MapPin,
   ScanFace,
   Loader2,
+  Link2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,6 +55,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { CreateFlowModal } from "@/components/admin/flows/CreateFlowModal";
+import { StartVerificationModal } from "@/components/admin/StartVerificationModal";
 import {
   Flow,
   SUBSCRIPTION_PLANS,
@@ -127,6 +129,8 @@ export default function Flows() {
   const [deleteFlow, setDeleteFlow] = useState<Flow | null>(null);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [verifyModalOpen, setVerifyModalOpen] = useState(false);
+  const [verifyFlowId, setVerifyFlowId] = useState<string | null>(null);
 
   const loadFlows = useCallback(async () => {
     try {
@@ -399,6 +403,11 @@ export default function Flows() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => { setVerifyFlowId(flow.id); setVerifyModalOpen(true); }}>
+                          <Link2 className="h-4 w-4 mr-2" />
+                          Start Verification
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
                         <DropdownMenuItem onClick={() => handleEdit(flow)}>
                           <Pencil className="h-4 w-4 mr-2" />
                           Edit
@@ -479,6 +488,12 @@ export default function Flows() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <StartVerificationModal
+        open={verifyModalOpen}
+        onOpenChange={setVerifyModalOpen}
+        preselectedFlowId={verifyFlowId}
+      />
     </div>
   );
 }
