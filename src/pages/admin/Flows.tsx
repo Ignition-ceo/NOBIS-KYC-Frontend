@@ -84,6 +84,15 @@ const MODULE_ICONS: Record<string, React.ElementType> = {
 };
 
 // Map backend flow data to frontend Flow type
+// Map backend verification type to frontend module key
+const BACKEND_TO_FRONTEND_MODULE: Record<string, string> = {
+  phone: "phone_verification",
+  email: "email_verification",
+  idDocument: "identity_document",
+  selfie: "selfie",
+  proofOfAddress: "poa_verification",
+};
+
 function mapBackendFlow(backendFlow: any): Flow {
   return {
     id: backendFlow._id || backendFlow.id,
@@ -105,17 +114,21 @@ function mapBackendFlow(backendFlow: any): Flow {
           description: backendFlow.subscriptionPlan.description || "",
           included_modules_json: backendFlow.subscriptionPlan.intakeModules || [],
           includes_text: "",
-          risk_level_count: 0,
-          sanctions_level_count: 0,
+          risk_level_count: backendFlow.subscriptionPlan.defaults?.riskLevel || 0,
+          sanctions_level_count: backendFlow.subscriptionPlan.defaults?.sanctionsLevel || 0,
           created_at: "",
         }
       : undefined,
-    modules: backendFlow.requiredVerifications?.map((v: any, idx: number) => ({
-      id: `fm_${backendFlow._id}_${idx}`,
-      flow_id: backendFlow._id || backendFlow.id,
-      module_key: v.verificationType || v.module_key,
-      enabled: true,
-    })) || [],
+    modules: backendFlow.requiredVerifications?.map((v: any, idx: number) => {
+      const backendKey = v.verificationType || v.module_key;
+      const frontendKey = BACKEND_TO_FRONTEND_MODULE[backendKey] || backendKey;
+      return {
+        id: `fm_${backendFlow._id}_${idx}`,
+        flow_id: backendFlow._id || backendFlow.id,
+        module_key: frontendKey,
+        enabled: true,
+      };
+    }) || [],
   };
 }
 
@@ -168,8 +181,26 @@ export default function Flows() {
   const handleSaveFlow = async (flow: Flow) => {
     try {
       const exists = flows.find((f) => f.id === flow.id && !flow.id.startsWith("flow_"));
+      const enabledModules = flow.modules?.filter((m) => m.enabled) || [];
+      const requiredVerifications = enabledModules.map((m, idx) => ({
+        verificationType: MODULE_TO_BACKEND[m.module_key] || m.module_key,
+        order: idx + 1,
+        status: "pending",
+      }));
+
       if (exists) {
-        await updateFlowService({ id: flow.id, name: flow.name, description: flow.description });
+        await updateFlowService({
+          id: flow.id,
+          name: flow.name,
+          description: flow.description,
+          subscriptionPlan: flow.plan_id,
+          maxUses: flow.max_uses,
+          requiredVerifications,
+          verificationConfig: {
+            fraudPrevention: flow.fraud_prevention_enabled,
+            amlPepScreening: flow.aml_pep_enabled,
+          },
+        });
         toast.success("Flow updated successfully");
       } else {
         await createFlowService({
@@ -177,13 +208,7 @@ export default function Flows() {
           description: flow.description,
           subscriptionPlan: flow.plan_id,
           maxUses: flow.max_uses,
-          requiredVerifications: flow.modules
-            ?.filter((m) => m.enabled)
-            .map((m, idx) => ({
-              verificationType: MODULE_TO_BACKEND[m.module_key] || m.module_key,
-              order: idx + 1,
-              status: "pending",
-            })) || [],
+          requiredVerifications,
           verificationConfig: {
             fraudPrevention: flow.fraud_prevention_enabled,
             amlPepScreening: flow.aml_pep_enabled,
