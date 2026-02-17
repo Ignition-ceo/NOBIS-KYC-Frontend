@@ -137,6 +137,7 @@ export default function ApplicantDetails() {
   const [activeTab, setActiveTab] = useState("idv");
   const [poaBillModalOpen, setPoaBillModalOpen] = useState(false);
   const [imageModalUrl, setImageModalUrl] = useState<string | null>(null);
+  const [geoData, setGeoData] = useState<any>(null);
 
   // Load data
   useEffect(() => {
@@ -158,6 +159,34 @@ export default function ApplicantDetails() {
       setLoading(false);
     }
   };
+
+  // IP Geolocation lookup
+  useEffect(() => {
+    const ip = applicant?.ip || verificationResults?.find((r: any) => r.verificationType === "idDocument")?.rawResponse?.status?.ipAddress;
+    if (!ip || geoData) return;
+    // Check if backend already stored geo data
+    const storedGeo = applicant?.geoLocation;
+    if (storedGeo?.country) {
+      setGeoData(storedGeo);
+      return;
+    }
+    // Fallback: free IP geolocation API (HTTPS)
+    fetch(`https://ipapi.co/${ip}/json/`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data.error) {
+          setGeoData({
+            country: data.country_name,
+            regionName: data.region,
+            city: data.city,
+            lat: data.latitude,
+            lon: data.longitude,
+            isp: data.org,
+          });
+        }
+      })
+      .catch(() => {}); // silent fail
+  }, [applicant, verificationResults]);
 
   // Get verification result by type
   const getResult = useCallback((type: string) => {
@@ -184,15 +213,16 @@ export default function ApplicantDetails() {
   // Selfie URL from face result or ID result images
   const selfieUrl = faceResult?.imagesUrls?.[0] || idvResult?.imagesUrls?.find((u: string) => u.includes("selfie")) || null;
 
-  // Location data from ID verification raw response
+  // Location data — prefer backend stored, then geoIP lookup, then raw response
   const ipAddress = applicant?.ip || idvResult?.rawResponse?.status?.ipAddress || null;
-  const locationData = idvResult?.processedData?.location || idvResult?.rawResponse?.location || {};
-  const country = safeStr(locationData?.country || idvResult?.rawResponse?.country || "—");
-  const region = safeStr(locationData?.region || locationData?.state || "—");
-  const city = safeStr(locationData?.city || "—");
-  const lat = locationData?.latitude || locationData?.lat;
-  const lng = locationData?.longitude || locationData?.lng || locationData?.lon;
+  const storedGeo = applicant?.geoLocation || {};
+  const country = safeStr(storedGeo.country || geoData?.country || "—");
+  const region = safeStr(storedGeo.region || geoData?.regionName || "—");
+  const city = safeStr(storedGeo.city || geoData?.city || "—");
+  const lat = storedGeo.lat || geoData?.lat || null;
+  const lng = storedGeo.lng || geoData?.lon || null;
   const coordinates = lat && lng ? `${lat}, ${lng}` : null;
+  const isp = geoData?.isp || geoData?.org || null;
 
   // Steps
   const requiredSteps = applicant?.requiredVerifications || [];
