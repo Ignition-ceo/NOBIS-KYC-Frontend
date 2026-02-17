@@ -185,7 +185,7 @@ export default function ApplicantDetails() {
   const selfieUrl = faceResult?.imagesUrls?.[0] || idvResult?.imagesUrls?.find((u: string) => u.includes("selfie")) || null;
 
   // Location data from ID verification raw response
-  const ipAddress = applicant?.ip || idvRaw.status?.ipAddress || null;
+  const ipAddress = applicant?.ip || idvResult?.rawResponse?.status?.ipAddress || null;
   const locationData = idvResult?.processedData?.location || idvResult?.rawResponse?.location || {};
   const country = safeStr(locationData?.country || idvResult?.rawResponse?.country || "—");
   const region = safeStr(locationData?.region || locationData?.state || "—");
