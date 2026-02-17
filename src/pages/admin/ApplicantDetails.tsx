@@ -160,7 +160,7 @@ export default function ApplicantDetails() {
     }
   };
 
-  // IP Geolocation lookup
+  // IP Geolocation — read from backend-stored geoLocation
   useEffect(() => {
     const ip = applicant?.ip || verificationResults?.find((r: any) => r.verificationType === "idDocument")?.rawResponse?.status?.ipAddress;
     if (!ip || geoData) return;
@@ -170,22 +170,15 @@ export default function ApplicantDetails() {
       setGeoData(storedGeo);
       return;
     }
-    // Fallback: free IP geolocation API (HTTPS, CORS-friendly)
-    fetch(`https://ipwho.is/${ip}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.success !== false) {
-          setGeoData({
-            country: data.country,
-            regionName: data.region,
-            city: data.city,
-            lat: data.latitude,
-            lon: data.longitude,
-            isp: data.connection?.isp || data.connection?.org || null,
-          });
+    // Fallback for old records: trigger backend enrichment
+    api.post(`/geo/enrich/${applicant?._id}`)
+      .then((res) => {
+        if (res.data?.geoLocation) {
+          setGeoData(res.data.geoLocation);
         }
       })
-      .catch((err) => { console.warn("GeoIP lookup failed:", err); });
+      .catch(() => {}); // silent fail
+  }, [applicant, verificationResults]);
   }, [applicant, verificationResults]);
 
   // Get verification result by type
@@ -213,16 +206,18 @@ export default function ApplicantDetails() {
   // Selfie URL from face result or ID result images
   const selfieUrl = faceResult?.imagesUrls?.[0] || idvResult?.imagesUrls?.find((u: string) => u.includes("selfie")) || null;
 
-  // Location data — prefer backend stored, then geoIP lookup, then raw response
+  // Location data — from backend geoLocation (MaxMind)
   const ipAddress = applicant?.ip || idvResult?.rawResponse?.status?.ipAddress || null;
   const storedGeo = applicant?.geoLocation || {};
-  const country = safeStr(storedGeo.country || geoData?.country || "—");
-  const region = safeStr(storedGeo.region || geoData?.regionName || "—");
-  const city = safeStr(storedGeo.city || geoData?.city || "—");
-  const lat = storedGeo.lat || geoData?.lat || null;
-  const lng = storedGeo.lng || geoData?.lon || null;
+  const geoSource = geoData || storedGeo;
+  const country = safeStr(geoSource?.country || "—");
+  const countryCode = geoSource?.countryCode || null;
+  const region = safeStr(geoSource?.region || geoSource?.regionName || "—");
+  const city = safeStr(geoSource?.city || "—");
+  const lat = geoSource?.latitude || geoSource?.lat || null;
+  const lng = geoSource?.longitude || geoSource?.lon || null;
   const coordinates = lat && lng ? `${lat}, ${lng}` : null;
-  const isp = geoData?.isp || geoData?.org || null;
+  const timezone = geoSource?.timezone || null;
 
   // Steps
   const requiredSteps = applicant?.requiredVerifications || [];
