@@ -94,6 +94,8 @@ export function StartVerificationModal({ open, onOpenChange, preselectedFlowId }
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [sendResult, setSendResult] = useState<{ sent: number; failed: number } | null>(null);
+  const [bulkMode, setBulkMode] = useState(false);
 
   const qrRef = useRef<HTMLDivElement>(null);
 
@@ -106,6 +108,8 @@ export function StartVerificationModal({ open, onOpenChange, preselectedFlowId }
       setSendTo("");
       setSendMessage("");
       setSendError(null);
+      setSendResult(null);
+      setBulkMode(false);
     }
   }, [open]);
 
@@ -146,20 +150,38 @@ export function StartVerificationModal({ open, onOpenChange, preselectedFlowId }
     setTimeout(() => setCopied(null), 2000);
   };
 
+  // ── Parse recipients from input (supports comma, newline, semicolon separated) ──
+  const parseRecipients = (input: string): Array<{ to: string }> => {
+    return input
+      .split(/[,;\n]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((to) => ({ to }));
+  };
+
+  const recipientCount = parseRecipients(sendTo).length;
+
   // ── Send handler ──
   const handleSend = async () => {
-    if (!sendTo.trim() || !selectedFlowId) return;
+    const recipients = parseRecipients(sendTo);
+    if (!recipients.length || !selectedFlowId) return;
     setSending(true);
     setSendError(null);
+    setSendResult(null);
 
     try {
-      await api.post("/flows/" + selectedFlowId + "/invite", {
-        channel: sendMethod,
-        to: sendTo.trim(),
+      const res = await api.post("/infoBip/send-verification-link", {
+        recipients,
+        method: sendMethod === "whatsapp" ? "sms" : "email",
+        flowId: selectedFlowId,
+        flowUrl,
+        flowName: flow?.name || "Identity Verification",
         message: sendMessage.trim() || undefined,
       });
+      const data = res.data;
       setSent(true);
-      setTimeout(() => setSent(false), 4000);
+      setSendResult({ sent: data.sent || recipients.length, failed: data.failed || 0 });
+      setTimeout(() => { setSent(false); setSendResult(null); }, 5000);
     } catch (err: any) {
       const msg = err?.response?.data?.message || "Failed to send. Please try again.";
       setSendError(typeof msg === "string" ? msg : JSON.stringify(msg));
@@ -467,39 +489,65 @@ export function StartVerificationModal({ open, onOpenChange, preselectedFlowId }
               {/* ── SEND ── */}
               {activeMethod === "send" && (
                 <div className="space-y-5">
-                  <div>
-                    <h3 className="text-[15px] font-semibold text-slate-900">Send Directly</h3>
-                    <p className="text-[13px] text-slate-500 mt-0.5 leading-relaxed">
-                      Send the verification link directly to an applicant via email or WhatsApp.
-                    </p>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h3 className="text-[15px] font-semibold text-slate-900">Send Directly</h3>
+                      <p className="text-[13px] text-slate-500 mt-0.5 leading-relaxed">
+                        Send the verification link via email or WhatsApp.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => { setBulkMode(!bulkMode); setSendTo(""); setSent(false); setSendError(null); setSendResult(null); }}
+                      className={cn("text-[11px] font-semibold px-2.5 py-1 rounded-md border transition-colors",
+                        bulkMode ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300")}
+                    >
+                      {bulkMode ? "Bulk Mode" : "Single"}
+                    </button>
                   </div>
 
                   {/* Email / WhatsApp toggle */}
                   <div className="flex items-center gap-0.5 p-0.5 bg-slate-100 rounded-lg w-fit">
-                    <button onClick={() => { setSendMethod("email"); setSendTo(""); setSent(false); setSendError(null); }}
+                    <button onClick={() => { setSendMethod("email"); setSendTo(""); setSent(false); setSendError(null); setSendResult(null); }}
                       className={cn("flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-[12px] font-semibold transition-all",
                         sendMethod === "email" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}>
                       <Mail className="h-3 w-3" />Email
                     </button>
-                    <button onClick={() => { setSendMethod("whatsapp"); setSendTo(""); setSent(false); setSendError(null); }}
+                    <button onClick={() => { setSendMethod("whatsapp"); setSendTo(""); setSent(false); setSendError(null); setSendResult(null); }}
                       className={cn("flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-[12px] font-semibold transition-all",
                         sendMethod === "whatsapp" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}>
                       <MessageSquare className="h-3 w-3" />WhatsApp
                     </button>
                   </div>
 
-                  {/* Recipient */}
+                  {/* Recipient(s) */}
                   <div className="space-y-1.5">
-                    <Label className="text-[13px] font-medium text-slate-700">
-                      {sendMethod === "email" ? "Email address" : "WhatsApp number"} <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      type={sendMethod === "email" ? "email" : "tel"}
-                      placeholder={sendMethod === "email" ? "applicant@example.com" : "+1 (868) 555-0123"}
-                      value={sendTo}
-                      onChange={(e) => { setSendTo(e.target.value); setSent(false); setSendError(null); }}
-                      className="h-10 bg-white border-slate-200 placeholder:text-slate-300 text-[13px]"
-                    />
+                    <div className="flex items-center justify-between">
+                      <Label className="text-[13px] font-medium text-slate-700">
+                        {sendMethod === "email" ? "Email address" : "WhatsApp number"}{bulkMode ? "(es)" : ""} <span className="text-red-500">*</span>
+                      </Label>
+                      {bulkMode && recipientCount > 0 && (
+                        <span className="text-[11px] font-semibold text-slate-400">{recipientCount} recipient{recipientCount !== 1 ? "s" : ""}</span>
+                      )}
+                    </div>
+                    {bulkMode ? (
+                      <Textarea
+                        placeholder={sendMethod === "email"
+                          ? "Enter emails separated by commas or new lines:\napplicant1@example.com\napplicant2@example.com"
+                          : "Enter numbers separated by commas or new lines:\n+18685551234\n+18685555678"}
+                        value={sendTo}
+                        onChange={(e) => { setSendTo(e.target.value); setSent(false); setSendError(null); setSendResult(null); }}
+                        rows={4}
+                        className="bg-white border-slate-200 placeholder:text-slate-300 text-[13px] font-mono"
+                      />
+                    ) : (
+                      <Input
+                        type={sendMethod === "email" ? "email" : "tel"}
+                        placeholder={sendMethod === "email" ? "applicant@example.com" : "+1 (868) 555-0123"}
+                        value={sendTo}
+                        onChange={(e) => { setSendTo(e.target.value); setSent(false); setSendError(null); setSendResult(null); }}
+                        className="h-10 bg-white border-slate-200 placeholder:text-slate-300 text-[13px]"
+                      />
+                    )}
                   </div>
 
                   {/* Custom message (email only) */}
@@ -523,14 +571,14 @@ export function StartVerificationModal({ open, onOpenChange, preselectedFlowId }
                     <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Preview</p>
                     {sendMethod === "email" ? (
                       <>
-                        <p className="text-[13px] font-medium text-slate-900">Subject: Complete your identity verification</p>
+                        <p className="text-[13px] font-medium text-slate-900">Subject: Action Required: {flow?.name || "Identity Verification"}</p>
                         {sendMessage && <p className="text-[12px] text-slate-500 italic leading-relaxed">"{sendMessage}"</p>}
                         <p className="font-mono text-[11px] text-blue-600 truncate">{flowUrl}</p>
                       </>
                     ) : (
                       <>
                         <p className="text-[13px] text-slate-700 leading-relaxed">
-                          Hi! You've been invited to complete your identity verification. Click the link below to get started:
+                          NOBIS: Please complete your {flow?.name || "Identity Verification"}. Click here to begin:
                         </p>
                         <p className="font-mono text-[11px] text-blue-600 truncate">{flowUrl}</p>
                       </>
@@ -544,13 +592,25 @@ export function StartVerificationModal({ open, onOpenChange, preselectedFlowId }
                     </div>
                   )}
 
+                  {/* Success result (bulk) */}
+                  {sendResult && (
+                    <div className="rounded-lg bg-emerald-50 border border-emerald-100 px-4 py-3 space-y-1">
+                      <p className="text-[12px] font-semibold text-emerald-800">
+                        {sendResult.sent} of {sendResult.sent + sendResult.failed} sent successfully
+                      </p>
+                      {sendResult.failed > 0 && (
+                        <p className="text-[11px] text-red-600">{sendResult.failed} failed to send</p>
+                      )}
+                    </div>
+                  )}
+
                   {/* Send button */}
                   <Button onClick={handleSend} disabled={!sendTo.trim() || sending}
                     className={cn("w-full h-10 text-[13px] font-semibold gap-2",
                       sent ? "bg-emerald-600 hover:bg-emerald-700" : "bg-slate-900 hover:bg-slate-800")}>
-                    {sending ? <><Loader2 className="h-4 w-4 animate-spin" />Sending...</>
+                    {sending ? <><Loader2 className="h-4 w-4 animate-spin" />Sending{recipientCount > 1 ? ` to ${recipientCount} recipients` : ""}...</>
                       : sent ? <><Check className="h-4 w-4" />Sent successfully</>
-                      : <><Send className="h-4 w-4" />Send {sendMethod === "email" ? "email" : "WhatsApp"}</>}
+                      : <><Send className="h-4 w-4" />{recipientCount > 1 ? `Send to ${recipientCount} recipients` : `Send ${sendMethod === "email" ? "email" : "WhatsApp"}`}</>}
                   </Button>
                 </div>
               )}
