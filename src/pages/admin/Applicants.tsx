@@ -534,7 +534,7 @@ export default function Applicants() {
                             <DropdownMenuContent align="end" className="w-48">
                               <DropdownMenuItem
                                 className="gap-2 cursor-pointer"
-                                onClick={() => navigate(`/admin/users/${applicant.id}`)}
+                                onClick={() => navigate(`/client/users/${applicant.id}`)}
                               >
                                 <ArrowUpRight className="h-4 w-4" />
                                 Open applicant

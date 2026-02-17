@@ -346,7 +346,7 @@ export function ApplicantSidePanel({ applicant, onClose, onStatusChange }: Appli
           <Button 
             className="w-full h-12 rounded-xl bg-primary hover:bg-primary/90 font-semibold"
             onClick={() => {
-              navigate(`/admin/users/${applicant.id}`);
+              navigate(`/client/users/${applicant.id}`);
               onClose();
             }}
           >

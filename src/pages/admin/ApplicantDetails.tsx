@@ -170,22 +170,22 @@ export default function ApplicantDetails() {
       setGeoData(storedGeo);
       return;
     }
-    // Fallback: free IP geolocation API (HTTPS)
-    fetch(`https://ipapi.co/${ip}/json/`)
+    // Fallback: free IP geolocation API (HTTPS, CORS-friendly)
+    fetch(`https://ipwho.is/${ip}`)
       .then((r) => r.json())
       .then((data) => {
-        if (!data.error) {
+        if (data.success !== false) {
           setGeoData({
-            country: data.country_name,
+            country: data.country,
             regionName: data.region,
             city: data.city,
             lat: data.latitude,
             lon: data.longitude,
-            isp: data.org,
+            isp: data.connection?.isp || data.connection?.org || null,
           });
         }
       })
-      .catch(() => {}); // silent fail
+      .catch((err) => { console.warn("GeoIP lookup failed:", err); });
   }, [applicant, verificationResults]);
 
   // Get verification result by type
@@ -375,7 +375,7 @@ export default function ApplicantDetails() {
     return (
       <div className="flex flex-col items-center justify-center h-96 gap-3">
         <p className="text-muted-foreground">Applicant not found</p>
-        <Button variant="outline" onClick={() => navigate("/admin/applicants")}>Back to Users</Button>
+        <Button variant="outline" onClick={() => navigate("/client/users")}>Back to Users</Button>
       </div>
     );
   }
@@ -387,7 +387,7 @@ export default function ApplicantDetails() {
         <CardContent className="p-5">
           <div className="flex items-center justify-between gap-4 flex-nowrap min-w-0">
             <div className="flex items-center gap-4 flex-1 min-w-0">
-              <Button variant="ghost" size="icon" onClick={() => navigate("/admin/applicants")} className="h-10 w-10 rounded-xl flex-shrink-0">
+              <Button variant="ghost" size="icon" onClick={() => navigate("/client/users")} className="h-10 w-10 rounded-xl flex-shrink-0">
                 <ArrowLeft className="h-5 w-5" />
               </Button>
               <div className="flex items-center gap-4 min-w-0">
