@@ -108,9 +108,19 @@ const copyToClipboard = (text: string, label: string) => {
   toast.success(`${label} copied to clipboard`);
 };
 
-// Extract processedData fields safely
-function pd(result: any, key: string, fallback = "—") {
-  return result?.processedData?.[key] ?? result?.rawResponse?.[key] ?? fallback;
+// Safe string — prevents React error #31 (objects as children)
+function safeStr(val: any): string {
+  if (val === null || val === undefined) return "—";
+  if (typeof val === "string") return val;
+  if (typeof val === "number" || typeof val === "boolean") return String(val);
+  if (Array.isArray(val)) return val.map(safeStr).join(", ");
+  if (typeof val === "object") return JSON.stringify(val);
+  return String(val);
+}
+
+// Check if a value is a primitive (safe to render)
+function isPrimitive(val: any): boolean {
+  return val === null || val === undefined || typeof val === "string" || typeof val === "number" || typeof val === "boolean";
 }
 
 // ── Component ──────────────────────────────────────────────────────────
@@ -165,10 +175,10 @@ export default function ApplicantDetails() {
   // Derived data
   const fullName = applicant?.name || "Unknown";
   const initials = fullName.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
-  const applicantId = applicant?.applicantIdRemote || applicant?._id || id;
+  const applicantId = safeStr(applicant?.applicantIdRemote || applicant?._id || id);
   const overallStatus = applicant ? mapOverallStatus(applicant) : "PENDING";
   const status = statusConfig[overallStatus] || statusConfig.PENDING;
-  const flowName = applicant?.flowId?.name || applicant?.flowId || "—";
+  const flowName = safeStr(applicant?.flowId?.name || (typeof applicant?.flowId === "string" ? applicant.flowId : null) || "—");
   const submittedAt = applicant?.createdAt ? new Date(applicant.createdAt).toLocaleString("en-GB", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 
   // Selfie URL from face result or ID result images
@@ -177,9 +187,9 @@ export default function ApplicantDetails() {
   // Location data from ID verification raw response
   const ipAddress = idvResult?.rawResponse?.ipAddress || applicant?.ip || null;
   const locationData = idvResult?.processedData?.location || idvResult?.rawResponse?.location || {};
-  const country = locationData?.country || idvResult?.rawResponse?.country || "—";
-  const region = locationData?.region || locationData?.state || "—";
-  const city = locationData?.city || "—";
+  const country = safeStr(locationData?.country || idvResult?.rawResponse?.country || "—");
+  const region = safeStr(locationData?.region || locationData?.state || "—");
+  const city = safeStr(locationData?.city || "—");
   const lat = locationData?.latitude || locationData?.lat;
   const lng = locationData?.longitude || locationData?.lng || locationData?.lon;
   const coordinates = lat && lng ? `${lat}, ${lng}` : null;
@@ -547,7 +557,7 @@ export default function ApplicantDetails() {
                                   value === "FAIL" ? "bg-red-50 text-red-700 border-red-200" :
                                   "bg-amber-50 text-amber-700 border-amber-200"
                                 }`}>
-                                  {String(value)}
+                                  {safeStr(value)}
                                 </Badge>
                               </div>
                             ))}
@@ -562,10 +572,10 @@ export default function ApplicantDetails() {
                       <AccordionTrigger className="text-sm font-semibold hover:no-underline py-4">Extracted Personal Information</AccordionTrigger>
                       <AccordionContent className="pb-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          {Object.entries(idvExtracted).map(([key, value]) => (
+                          {Object.entries(idvExtracted).filter(([, v]) => isPrimitive(v)).map(([key, value]) => (
                             <div key={key} className="flex items-center justify-between py-2.5 px-3 bg-muted/30 rounded-xl border border-border/40">
                               <span className="text-xs font-medium text-muted-foreground capitalize">{key.replace(/([A-Z])/g, " $1").trim()}</span>
-                              <span className="text-sm font-semibold text-foreground">{String(value) || "—"}</span>
+                              <span className="text-sm font-semibold text-foreground">{safeStr(value)}</span>
                             </div>
                           ))}
                         </div>
@@ -578,11 +588,11 @@ export default function ApplicantDetails() {
                       <AccordionTrigger className="text-sm font-semibold hover:no-underline py-4">ID Document Information</AccordionTrigger>
                       <AccordionContent className="pb-4">
                         <div className="grid grid-cols-2 gap-3">
-                          {Object.entries(idvDocInfo).map(([key, value]) => (
+                          {Object.entries(idvDocInfo).filter(([, v]) => isPrimitive(v)).map(([key, value]) => (
                             <div key={key} className="flex justify-between items-center py-1">
                               <span className="text-sm text-muted-foreground">{key}:</span>
                               <span className={`text-sm font-medium ${value === "Valid" || value === "Yes" ? "text-emerald-600" : ""}`}>
-                                {String(value)}
+                                {safeStr(value)}
                               </span>
                             </div>
                           ))}
@@ -724,10 +734,10 @@ export default function ApplicantDetails() {
                         </Badge>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {Object.entries(poaProcessed).filter(([k]) => k !== "raw" && typeof poaProcessed[k] !== "object").map(([key, value]) => (
+                        {Object.entries(poaProcessed).filter(([k, v]) => k !== "raw" && isPrimitive(v)).map(([key, value]) => (
                           <div key={key} className="flex items-center justify-between py-2.5 px-3 bg-muted/30 rounded-xl border border-border/40">
                             <span className="text-xs font-medium text-muted-foreground capitalize">{key.replace(/([A-Z])/g, " $1").trim()}</span>
-                            <span className="text-sm font-semibold text-foreground">{String(value) || "—"}</span>
+                            <span className="text-sm font-semibold text-foreground">{safeStr(value)}</span>
                           </div>
                         ))}
                       </div>
