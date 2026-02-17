@@ -426,7 +426,7 @@ export default function ApplicantDetails() {
             {lat && lng && (
               <div className="mt-3 rounded-xl overflow-hidden border border-border/60 shadow-sm">
                 <img
-                  src={`https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=13&size=400x180&markers=color:red%7C${lat},${lng}&key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8`}
+                  src={`https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=13&size=400x180&markers=color:red%7C${lat},${lng}&key=${import.meta.env.VITE_GOOGLE_MAPS_KEY || ""}`}
                   alt="Location map"
                   className="w-full h-[160px] object-cover"
                   onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
