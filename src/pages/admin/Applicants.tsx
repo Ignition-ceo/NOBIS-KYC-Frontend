@@ -12,13 +12,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   Loader2,
-  Trash2,
-  Download,
-  RefreshCw,
-  ChevronsLeft,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsRight,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -46,23 +39,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ApplicantSidePanel, Applicant } from "@/components/admin/ApplicantSidePanel";
 import { VerificationStepIcon, StepState } from "@/components/admin/VerificationStepIcon";
-import { fetchApplicants, updateApplicantService, deleteApplicantService } from "@/services/applicant";
+import { fetchApplicants, updateApplicantService } from "@/services/applicant";
 import { toast } from "sonner";
 
-// ─── Map backend verification status to display status ───
+// Map backend verification status to display status
 const mapVerificationStatus = (status: string): string => {
   switch (status) {
     case "verified":
@@ -77,12 +60,13 @@ const mapVerificationStatus = (status: string): string => {
   }
 };
 
-// ─── Map backend applicant to frontend shape ───
+// Map backend applicant to frontend shape
 function mapBackendApplicant(a: any): Applicant & {
   steps: Record<string, StepState>;
   documentType?: string;
   flowName?: string;
 } {
+  // Build verification steps from requiredVerifications
   const steps: Record<string, StepState> = {};
   const stepKeyMap: Record<string, string> = {
     phone: "phone",
@@ -130,7 +114,7 @@ function mapBackendApplicant(a: any): Applicant & {
   };
 }
 
-// ─── Step definitions ───
+// Step definitions for rendering
 type StepDefinition = {
   key: string;
   icon: "phone" | "mail" | "id-card" | "scan-face" | "map-pin";
@@ -147,10 +131,10 @@ const allStepDefinitions: StepDefinition[] = [
 ];
 
 const getApplicantSteps = (steps: Record<string, StepState>): StepDefinition[] => {
+  // Only show steps that exist in this applicant's verification
   return allStepDefinitions.filter((def) => def.stateKey in steps);
 };
 
-// ─── Config ───
 const tabs = [
   { key: "all", label: "All" },
   { key: "verified", label: "Verified" },
@@ -177,12 +161,6 @@ const statusConfig: Record<string, { label: string; className: string }> = {
   },
 };
 
-const PAGE_SIZE_OPTIONS = [5, 10, 25, 50];
-
-// ═══════════════════════════════════════════════════════════════
-// MAIN COMPONENT
-// ═══════════════════════════════════════════════════════════════
-
 export default function Applicants() {
   const navigate = useNavigate();
   const [applicants, setApplicants] = useState<any[]>([]);
@@ -194,25 +172,19 @@ export default function Applicants() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
 
-  // Delete confirmation state
-  const [deleteTarget, setDeleteTarget] = useState<{ ids: string[]; names: string[] } | null>(null);
-  const [deleting, setDeleting] = useState(false);
-
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-
-  // ─── Load applicants ───
   const loadApplicants = useCallback(async () => {
     try {
       setLoading(true);
 
+      // Map tab to backend status filter
       let verificationStatus = "";
       if (activeTab === "verified") verificationStatus = "verified";
       else if (activeTab === "pending") verificationStatus = "pending";
       else if (activeTab === "rejected") verificationStatus = "rejected";
 
+      // Override with dropdown filter if set
       if (statusFilter !== "all") {
         if (statusFilter === "verified") verificationStatus = "verified";
         else if (statusFilter === "pending") verificationStatus = "pending";
@@ -222,7 +194,6 @@ export default function Applicants() {
 
       const params: Record<string, any> = {
         page,
-        limit: pageSize,
         searchText: searchQuery || undefined,
         verificationStatus: verificationStatus || undefined,
         sortBy: sortBy === "newest" || sortBy === "oldest" ? "createdAt" : undefined,
@@ -230,6 +201,7 @@ export default function Applicants() {
         nameSort: sortBy === "name-az" ? "1" : sortBy === "name-za" ? "-1" : undefined,
       };
 
+      // Remove undefined values
       Object.keys(params).forEach((key) => {
         if (params[key] === undefined) delete params[key];
       });
@@ -244,7 +216,7 @@ export default function Applicants() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, searchQuery, activeTab, statusFilter, sortBy]);
+  }, [page, searchQuery, activeTab, statusFilter, sortBy]);
 
   useEffect(() => {
     loadApplicants();
@@ -253,9 +225,8 @@ export default function Applicants() {
   // Reset page when filters change
   useEffect(() => {
     setPage(1);
-  }, [searchQuery, activeTab, statusFilter, sortBy, pageSize]);
+  }, [searchQuery, activeTab, statusFilter, sortBy]);
 
-  // ─── Stats ───
   const stats = useMemo(
     () => ({
       total: total,
@@ -267,7 +238,6 @@ export default function Applicants() {
     [applicants, total]
   );
 
-  // ─── Status change ───
   const handleStatusChange = async (applicantId: string, newStatus: string) => {
     try {
       await updateApplicantService(applicantId, { overallStatus: newStatus.toLowerCase() });
@@ -278,42 +248,6 @@ export default function Applicants() {
     }
   };
 
-  // ─── Delete single or bulk ───
-  const handleDeleteConfirm = async () => {
-    if (!deleteTarget) return;
-    setDeleting(true);
-    try {
-      await Promise.all(deleteTarget.ids.map((id) => deleteApplicantService(id)));
-      toast.success(
-        deleteTarget.ids.length === 1
-          ? "Applicant deleted"
-          : `${deleteTarget.ids.length} applicants deleted`
-      );
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        deleteTarget.ids.forEach((id) => next.delete(id));
-        return next;
-      });
-      setDeleteTarget(null);
-      loadApplicants();
-    } catch (err) {
-      toast.error("Failed to delete applicant(s)");
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  const requestDeleteSingle = (applicant: any) => {
-    setDeleteTarget({ ids: [applicant.id], names: [applicant.fullName || applicant.email] });
-  };
-
-  const requestDeleteBulk = () => {
-    const ids = Array.from(selectedIds);
-    const names = applicants.filter((a) => selectedIds.has(a.id)).map((a) => a.fullName || a.email);
-    setDeleteTarget({ ids, names });
-  };
-
-  // ─── Selection ───
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -324,49 +258,13 @@ export default function Applicants() {
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === applicants.length && applicants.length > 0) {
+    if (selectedIds.size === applicants.length) {
       setSelectedIds(new Set());
     } else {
       setSelectedIds(new Set(applicants.map((a) => a.id)));
     }
   };
 
-  // ─── Bulk status change ───
-  const handleBulkStatusChange = async (newStatus: string) => {
-    try {
-      await Promise.all(
-        Array.from(selectedIds).map((id) =>
-          updateApplicantService(id, { overallStatus: newStatus.toLowerCase() })
-        )
-      );
-      toast.success(`${selectedIds.size} applicant(s) updated to ${newStatus}`);
-      setSelectedIds(new Set());
-      loadApplicants();
-    } catch (err) {
-      toast.error("Failed to update applicants");
-    }
-  };
-
-  // ─── Bulk export ───
-  const handleBulkExport = () => {
-    const selected = applicants.filter((a) => selectedIds.has(a.id));
-    const csv = [
-      ["Name", "Email", "Status", "Updated At"].join(","),
-      ...selected.map((a) =>
-        [a.fullName, a.email, a.status, a.updatedAt].join(",")
-      ),
-    ].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `nobis-applicants-export-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-    toast.success(`Exported ${selected.length} applicant(s)`);
-  };
-
-  // ─── Formatting helpers ───
   const formatDate = (dateStr: string) => {
     try {
       return new Date(dateStr).toLocaleDateString("en-US", {
@@ -409,37 +307,11 @@ export default function Applicants() {
     }
   };
 
-  // ─── Pagination helpers ───
-  const paginationStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const paginationEnd = Math.min(page * pageSize, total);
-
-  const getPageNumbers = (): (number | "ellipsis")[] => {
-    const pages: (number | "ellipsis")[] = [];
-    if (totalPages <= 7) {
-      for (let i = 1; i <= totalPages; i++) pages.push(i);
-    } else {
-      pages.push(1);
-      if (page > 3) pages.push("ellipsis");
-      for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) {
-        pages.push(i);
-      }
-      if (page < totalPages - 2) pages.push("ellipsis");
-      pages.push(totalPages);
-    }
-    return pages;
-  };
-
-  const hasSelection = selectedIds.size > 0;
-
-  // ═══════════════════════════════════════════════════════════════
-  // RENDER
-  // ═══════════════════════════════════════════════════════════════
-
   return (
     <div className="flex gap-0 h-[calc(100vh-80px)]">
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* ─── Header ─── */}
-        <div className="flex items-center justify-between p-6 pb-0">
+      <div className="flex-1 flex flex-col min-w-0 p-6 overflow-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Users</h1>
             <p className="text-muted-foreground text-sm">
@@ -448,8 +320,8 @@ export default function Applicants() {
           </div>
         </div>
 
-        {/* ─── Stats Bar ─── */}
-        <div className="flex items-center gap-6 px-6 pt-4 pb-2">
+        {/* Stats Bar */}
+        <div className="flex items-center gap-6 mb-6">
           <div className="flex items-center gap-2">
             <Users className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium">{total} Total</span>
@@ -464,8 +336,8 @@ export default function Applicants() {
           </div>
         </div>
 
-        {/* ─── Tabs ─── */}
-        <div className="flex items-center gap-1 px-6 border-b">
+        {/* Tabs */}
+        <div className="flex items-center gap-1 mb-4 border-b">
           {tabs.map((tab) => (
             <button
               key={tab.key}
@@ -484,8 +356,8 @@ export default function Applicants() {
           ))}
         </div>
 
-        {/* ─── Filters Row ─── */}
-        <div className="flex items-center gap-3 px-6 py-4">
+        {/* Filters Row */}
+        <div className="flex items-center gap-3 mb-4">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -520,365 +392,231 @@ export default function Applicants() {
           </Select>
         </div>
 
-        {/* ════════════════════════════════════════════════════════
-            NEW FEATURE: Bulk Actions Bar
-            ════════════════════════════════════════════════════════ */}
-        {hasSelection && (
-          <div className="flex items-center gap-3 px-6 py-2.5 bg-primary/5 border-y border-primary/10">
-            <span className="text-sm font-semibold text-primary">
-              {selectedIds.size} selected
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5 text-xs border-primary/30 text-primary hover:bg-primary/10"
-              onClick={handleBulkExport}
-            >
-              <Download className="h-3.5 w-3.5" />
-              Export
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 gap-1.5 text-xs border-primary/30 text-primary hover:bg-primary/10"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  Change Status
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-44">
-                <DropdownMenuItem onClick={() => handleBulkStatusChange("APPROVED")} className="gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-600" /> Approve
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleBulkStatusChange("NEEDS_REVIEW")} className="gap-2">
-                  <AlertTriangle className="h-4 w-4 text-amber-600" /> Needs Review
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleBulkStatusChange("REJECTED")} className="gap-2 text-red-600">
-                  <XCircle className="h-4 w-4" /> Reject
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5 text-xs border-red-300 text-red-600 hover:bg-red-50"
-              onClick={requestDeleteBulk}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Delete Selected
-            </Button>
-            <button
-              className="ml-auto text-xs text-muted-foreground hover:text-foreground transition-colors"
-              onClick={() => setSelectedIds(new Set())}
-            >
-              Clear selection
-            </button>
-          </div>
-        )}
-
-        {/* ─── Loading State ─── */}
+        {/* Loading State */}
         {loading && applicants.length === 0 ? (
           <div className="flex items-center justify-center h-64">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
         ) : (
           <>
-            {/* ════════════════════════════════════════════════════
-                IMPROVED: Scrollable Table Area
-                ════════════════════════════════════════════════════ */}
-            <div className="flex-1 overflow-auto px-6">
-              <div className="rounded-lg border bg-card overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-slate-50/50">
-                      <TableHead className="w-[40px]">
-                        <Checkbox
-                          checked={selectedIds.size === applicants.length && applicants.length > 0}
-                          onCheckedChange={toggleSelectAll}
-                        />
-                      </TableHead>
-                      <TableHead className="w-[280px]">Applicant</TableHead>
-                      <TableHead className="w-[200px]">Verification Steps</TableHead>
-                      <TableHead className="w-[180px]">Verified At</TableHead>
-                      <TableHead className="w-[130px]">Status</TableHead>
-                      <TableHead className="w-[50px]"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {applicants.map((applicant, index) => {
-                      const status = statusConfig[applicant.status] || statusConfig.PENDING;
-                      const initials = applicant.fullName
-                        .split(" ")
-                        .map((n: string) => n[0])
-                        .join("")
-                        .toUpperCase();
-                      const isEven = index % 2 === 0;
-                      const isSelected = selectedIds.has(applicant.id);
+            {/* Table */}
+            <div className="rounded-lg border bg-card overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-50/50">
+                    <TableHead className="w-[40px]">
+                      <Checkbox
+                        checked={selectedIds.size === applicants.length && applicants.length > 0}
+                        onCheckedChange={toggleSelectAll}
+                      />
+                    </TableHead>
+                    <TableHead className="w-[280px]">Applicant</TableHead>
+                    <TableHead className="w-[200px]">Verification Steps</TableHead>
+                    <TableHead className="w-[180px]">Verified At</TableHead>
+                    <TableHead className="w-[130px]">Status</TableHead>
+                    <TableHead className="w-[50px]"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {applicants.map((applicant, index) => {
+                    const status = statusConfig[applicant.status] || statusConfig.PENDING;
+                    const initials = applicant.fullName
+                      .split(" ")
+                      .map((n: string) => n[0])
+                      .join("")
+                      .toUpperCase();
+                    const isEven = index % 2 === 0;
+                    const isSelected = selectedIds.has(applicant.id);
 
-                      return (
-                        <TableRow
-                          key={applicant.id}
-                          onClick={() => setSelectedApplicant(applicant)}
-                          className={`cursor-pointer transition-colors h-[68px] ${
-                            selectedApplicant?.id === applicant.id
+                    return (
+                      <TableRow
+                        key={applicant.id}
+                        onClick={() => setSelectedApplicant(applicant)}
+                        className={`cursor-pointer transition-colors h-[68px] ${
+                          selectedApplicant?.id === applicant.id
+                            ? "bg-primary/5 hover:bg-primary/8"
+                            : isSelected
                               ? "bg-primary/5 hover:bg-primary/8"
-                              : isSelected
-                                ? "bg-primary/5 hover:bg-primary/8"
-                                : isEven
-                                  ? "bg-white hover:bg-slate-50/80"
-                                  : "bg-slate-50/40 hover:bg-slate-100/60"
-                          }`}
-                        >
-                          {/* Checkbox */}
-                          <TableCell className="py-4" onClick={(e) => e.stopPropagation()}>
-                            <Checkbox
-                              checked={isSelected}
-                              onCheckedChange={() => toggleSelect(applicant.id)}
-                              className="border-slate-300"
-                            />
-                          </TableCell>
+                              : isEven
+                                ? "bg-white hover:bg-slate-50/80"
+                                : "bg-slate-50/40 hover:bg-slate-100/60"
+                        }`}
+                      >
+                        {/* Checkbox */}
+                        <TableCell className="py-4" onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => toggleSelect(applicant.id)}
+                            className="border-slate-300"
+                          />
+                        </TableCell>
 
-                          {/* Applicant: Avatar + Name */}
-                          <TableCell className="py-4">
-                            <div className="flex items-center gap-3">
-                              <Avatar className="h-10 w-10 border border-slate-200/80 ring-1 ring-slate-100">
-                                <AvatarImage src={applicant.selfieUrl} className="object-cover" />
-                                <AvatarFallback className="text-xs bg-primary/10 text-primary font-bold">
-                                  {initials}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div className="space-y-0.5">
-                                <p className="font-semibold text-foreground text-sm leading-tight">
-                                  {applicant.fullName}
-                                </p>
-                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                  <span>{applicant.email}</span>
-                                  {applicant.documentType && (
-                                    <>
-                                      <span className="text-slate-300">•</span>
-                                      <span>{applicant.documentType}</span>
-                                    </>
-                                  )}
-                                </div>
+                        {/* Applicant: Avatar + Name */}
+                        <TableCell className="py-4">
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-10 w-10 border border-slate-200/80 ring-1 ring-slate-100">
+                              <AvatarImage src={applicant.selfieUrl} className="object-cover" />
+                              <AvatarFallback className="text-xs bg-primary/10 text-primary font-bold">
+                                {initials}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="space-y-0.5">
+                              <p className="font-semibold text-foreground text-sm leading-tight">
+                                {applicant.fullName}
+                              </p>
+                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <span>{applicant.email}</span>
+                                {applicant.documentType && (
+                                  <>
+                                    <span className="text-slate-300">•</span>
+                                    <span>{applicant.documentType}</span>
+                                  </>
+                                )}
                               </div>
                             </div>
-                          </TableCell>
-
-                          {/* Verification Steps */}
-                          <TableCell className="py-4">
-                            <div className="flex items-center gap-2.5">
-                              {getApplicantSteps(applicant.steps).map((step) => (
-                                <VerificationStepIcon
-                                  key={step.key}
-                                  icon={step.icon}
-                                  state={applicant.steps?.[step.stateKey] ?? "na"}
-                                  tooltip={step.label}
-                                />
-                              ))}
-                              {Object.keys(applicant.steps).length === 0 && (
-                                <span className="text-xs text-muted-foreground">No steps</span>
-                              )}
-                            </div>
-                          </TableCell>
-
-                          {/* Verified At */}
-                          <TableCell className="py-4">
-                            <div className="space-y-0.5">
-                              <p className="font-semibold text-foreground text-sm">
-                                {formatDate(applicant.updatedAt)}
-                              </p>
-                              <p className="text-xs text-muted-foreground/80">
-                                {formatTime(applicant.updatedAt)}
-                              </p>
-                              <p className="text-xs text-slate-400">
-                                {timeAgo(applicant.updatedAt)}
-                              </p>
-                            </div>
-                          </TableCell>
-
-                          {/* Status */}
-                          <TableCell className="py-4">
-                            <Badge
-                              variant="outline"
-                              className={`rounded-full px-3 py-1 font-medium text-xs tracking-wide border ${status.className}`}
-                            >
-                              {status.label}
-                            </Badge>
-                          </TableCell>
-
-                          {/* ════════════════════════════════════════
-                              IMPROVED: Actions with Delete option
-                              ════════════════════════════════════════ */}
-                          <TableCell className="py-4" onClick={(e) => e.stopPropagation()}>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-9 w-9 p-0 hover:bg-primary/10 rounded-lg"
-                                >
-                                  <MoreVertical className="h-4 w-4 text-muted-foreground" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-48">
-                                <DropdownMenuItem
-                                  className="gap-2 cursor-pointer"
-                                  onClick={() => navigate(`/client/users/${applicant.id}`)}
-                                >
-                                  <ArrowUpRight className="h-4 w-4" />
-                                  Open applicant
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  className="gap-2 cursor-pointer"
-                                  onClick={() => setSelectedApplicant(applicant)}
-                                >
-                                  <PanelRight className="h-4 w-4" />
-                                  Open in side panel
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  className="gap-2 cursor-pointer"
-                                  onClick={() => handleStatusChange(applicant.id, "APPROVED")}
-                                >
-                                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                                  Approve
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  className="gap-2 cursor-pointer"
-                                  onClick={() => handleStatusChange(applicant.id, "NEEDS_REVIEW")}
-                                >
-                                  <AlertTriangle className="h-4 w-4 text-amber-600" />
-                                  Needs Review
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  className="gap-2 cursor-pointer text-red-600"
-                                  onClick={() => handleStatusChange(applicant.id, "REJECTED")}
-                                >
-                                  <XCircle className="h-4 w-4" />
-                                  Reject
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                {/* NEW: Delete option */}
-                                <DropdownMenuItem
-                                  className="gap-2 cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
-                                  onClick={() => requestDeleteSingle(applicant)}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                  Delete User
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                    {applicants.length === 0 && !loading && (
-                      <TableRow>
-                        <TableCell colSpan={6} className="h-32 text-center">
-                          <div className="flex flex-col items-center gap-2">
-                            <XCircle className="h-8 w-8 text-muted-foreground" />
-                            <p className="text-muted-foreground">No applicants found</p>
                           </div>
                         </TableCell>
+
+                        {/* Verification Steps */}
+                        <TableCell className="py-4">
+                          <div className="flex items-center gap-2.5">
+                            {getApplicantSteps(applicant.steps).map((step) => (
+                              <VerificationStepIcon
+                                key={step.key}
+                                icon={step.icon}
+                                state={applicant.steps?.[step.stateKey] ?? "na"}
+                                tooltip={step.label}
+                              />
+                            ))}
+                            {Object.keys(applicant.steps).length === 0 && (
+                              <span className="text-xs text-muted-foreground">No steps</span>
+                            )}
+                          </div>
+                        </TableCell>
+
+                        {/* Verified At */}
+                        <TableCell className="py-4">
+                          <div className="space-y-0.5">
+                            <p className="font-semibold text-foreground text-sm">
+                              {formatDate(applicant.updatedAt)}
+                            </p>
+                            <p className="text-xs text-muted-foreground/80">
+                              {formatTime(applicant.updatedAt)}
+                            </p>
+                            <p className="text-xs text-slate-400">
+                              {timeAgo(applicant.updatedAt)}
+                            </p>
+                          </div>
+                        </TableCell>
+
+                        {/* Status */}
+                        <TableCell className="py-4">
+                          <Badge
+                            variant="outline"
+                            className={`rounded-full px-3 py-1 font-medium text-xs tracking-wide border ${status.className}`}
+                          >
+                            {status.label}
+                          </Badge>
+                        </TableCell>
+
+                        {/* Actions */}
+                        <TableCell className="py-4" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-9 w-9 p-0 hover:bg-primary/10 rounded-lg"
+                              >
+                                <MoreVertical className="h-4 w-4 text-muted-foreground" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-48">
+                              <DropdownMenuItem
+                                className="gap-2 cursor-pointer"
+                                onClick={() => navigate(`/admin/users/${applicant.id}`)}
+                              >
+                                <ArrowUpRight className="h-4 w-4" />
+                                Open applicant
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="gap-2 cursor-pointer"
+                                onClick={() => setSelectedApplicant(applicant)}
+                              >
+                                <PanelRight className="h-4 w-4" />
+                                Open in side panel
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="gap-2 cursor-pointer"
+                                onClick={() => handleStatusChange(applicant.id, "APPROVED")}
+                              >
+                                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                                Approve
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="gap-2 cursor-pointer"
+                                onClick={() => handleStatusChange(applicant.id, "NEEDS_REVIEW")}
+                              >
+                                <AlertTriangle className="h-4 w-4 text-amber-600" />
+                                Needs Review
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="gap-2 cursor-pointer text-red-600"
+                                onClick={() => handleStatusChange(applicant.id, "REJECTED")}
+                              >
+                                <XCircle className="h-4 w-4" />
+                                Reject
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
                       </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+                    );
+                  })}
+                  {applicants.length === 0 && !loading && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="h-32 text-center">
+                        <div className="flex flex-col items-center gap-2">
+                          <XCircle className="h-8 w-8 text-muted-foreground" />
+                          <p className="text-muted-foreground">No applicants found</p>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
             </div>
 
-            {/* ════════════════════════════════════════════════════════
-                NEW FEATURE: Full Pagination with Page Size Selector
-                ════════════════════════════════════════════════════════ */}
-            <div className="flex items-center justify-between px-6 py-3 border-t bg-card flex-shrink-0 flex-wrap gap-2">
-              {/* Rows per page */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Rows per page:</span>
-                <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v))}>
-                  <SelectTrigger className="w-[70px] h-8 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PAGE_SIZE_OPTIONS.map((size) => (
-                      <SelectItem key={size} value={String(size)}>
-                        {size}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Range display */}
-              <span className="text-sm text-muted-foreground">
-                {paginationStart}–{paginationEnd} of {total}
-              </span>
-
-              {/* Page navigation */}
-              <div className="flex items-center gap-1">
+            {/* Pagination */}
+            {total > 10 && (
+              <div className="flex items-center justify-center gap-2 mt-4">
                 <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  disabled={page <= 1}
-                  onClick={() => setPage(1)}
-                >
-                  <ChevronsLeft className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
+                  variant="ghost"
+                  size="sm"
                   disabled={page <= 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                 >
-                  <ChevronLeft className="h-4 w-4" />
+                  ← Previous
                 </Button>
-
-                {getPageNumbers().map((p, idx) =>
-                  p === "ellipsis" ? (
-                    <span key={`ellipsis-${idx}`} className="px-1.5 text-muted-foreground text-sm">
-                      …
-                    </span>
-                  ) : (
-                    <Button
-                      key={p}
-                      variant={page === p ? "default" : "outline"}
-                      size="icon"
-                      className="h-8 w-8 text-sm"
-                      onClick={() => setPage(p)}
-                    >
-                      {p}
-                    </Button>
-                  )
-                )}
-
+                <span className="text-sm text-muted-foreground">
+                  Page {page} of {Math.ceil(total / 10)}
+                </span>
                 <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  variant="ghost"
+                  size="sm"
+                  disabled={page >= Math.ceil(total / 10)}
+                  onClick={() => setPage((p) => p + 1)}
                 >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage(totalPages)}
-                >
-                  <ChevronsRight className="h-4 w-4" />
+                  Next →
                 </Button>
               </div>
-            </div>
+            )}
           </>
         )}
       </div>
 
-      {/* ─── Side Panel ─── */}
+      {/* Side Panel */}
       {selectedApplicant && (
         <ApplicantSidePanel
           applicant={selectedApplicant}
@@ -886,52 +624,6 @@ export default function Applicants() {
           onStatusChange={handleStatusChange}
         />
       )}
-
-      {/* ════════════════════════════════════════════════════════
-          NEW FEATURE: Delete Confirmation Modal
-          ════════════════════════════════════════════════════════ */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Delete {deleteTarget?.ids.length === 1 ? "user" : `${deleteTarget?.ids.length} users`}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleteTarget?.ids.length === 1 ? (
-                <>
-                  This will permanently delete <strong>{deleteTarget.names[0]}</strong> and all
-                  associated verification data. This action cannot be undone.
-                </>
-              ) : (
-                <>
-                  This will permanently delete {deleteTarget?.ids.length} users and all their
-                  associated verification data. This action cannot be undone.
-                </>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteConfirm}
-              disabled={deleting}
-              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
-            >
-              {deleting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  Deleting…
-                </>
-              ) : (
-                <>
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete
-                </>
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
