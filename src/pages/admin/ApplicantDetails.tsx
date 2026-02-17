@@ -179,7 +179,6 @@ export default function ApplicantDetails() {
       })
       .catch(() => {}); // silent fail
   }, [applicant, verificationResults]);
-  }, [applicant, verificationResults]);
 
   // Get verification result by type
   const getResult = useCallback((type: string) => {
