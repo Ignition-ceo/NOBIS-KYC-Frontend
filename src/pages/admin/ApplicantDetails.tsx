@@ -185,7 +185,7 @@ export default function ApplicantDetails() {
   const selfieUrl = faceResult?.imagesUrls?.[0] || idvResult?.imagesUrls?.find((u: string) => u.includes("selfie")) || null;
 
   // Location data from ID verification raw response
-  const ipAddress = idvResult?.rawResponse?.ipAddress || applicant?.ip || null;
+  const ipAddress = applicant?.ip || idvRaw.status?.ipAddress || null;
   const locationData = idvResult?.processedData?.location || idvResult?.rawResponse?.location || {};
   const country = safeStr(locationData?.country || idvResult?.rawResponse?.country || "—");
   const region = safeStr(locationData?.region || locationData?.state || "—");
@@ -197,25 +197,92 @@ export default function ApplicantDetails() {
   // Steps
   const requiredSteps = applicant?.requiredVerifications || [];
 
-  // IDV data
+  // IDV data — parse IDMission response format
   const idvProcessed = idvResult?.processedData || {};
   const idvRaw = idvResult?.rawResponse || {};
-  const idvDetailedChecks = idvProcessed.detailedChecks || idvProcessed.checks || idvRaw.detailedChecks || {};
-  const idvExtracted = idvProcessed.extracted || idvProcessed.personalData || idvRaw.extracted || {};
-  const idvDocInfo = idvProcessed.documentInfo || idvRaw.documentInfo || {};
+
+  // Extract detailed checks from IDMission format: Decision_KeyComponent.DecisionResult -> "OK"
+  const idvDetailedChecks: Record<string, string> = (() => {
+    // Try processedData first
+    if (idvProcessed.detailedChecks && typeof idvProcessed.detailedChecks === "object" && !idvProcessed.detailedChecks.DecisionResult) {
+      return idvProcessed.detailedChecks;
+    }
+    // Parse IDMission raw format
+    const details = idvRaw.resultData?.verificationResultDetails || {};
+    const checks: Record<string, string> = {};
+    for (const [key, val] of Object.entries(details)) {
+      if (val && typeof val === "object" && "DecisionResult" in (val as any)) {
+        const label = key.replace("Decision_", "").replace(/([A-Z])/g, " $1").trim();
+        checks[label] = (val as any).DecisionResult;
+      }
+    }
+    return checks;
+  })();
+
+  // Extract personal data
+  const idvExtracted: Record<string, string> = (() => {
+    if (idvProcessed.extracted && typeof idvProcessed.extracted === "object") {
+      const flat: Record<string, string> = {};
+      for (const [k, v] of Object.entries(idvProcessed.extracted)) { if (isPrimitive(v)) flat[k] = safeStr(v); }
+      return flat;
+    }
+    const personal = idvRaw.responseCustomerData?.extractedPersonalData || {};
+    const result: Record<string, string> = {};
+    if (personal.name) result["Full Name"] = personal.name;
+    if (personal.dob) result["Date of Birth"] = personal.dob;
+    if (personal.gender) result["Gender"] = personal.gender;
+    if (personal.address) result["Address"] = personal.address;
+    if (personal.firstName) result["First Name"] = personal.firstName;
+    if (personal.middleName) result["Middle Name"] = personal.middleName;
+    if (personal.lastName) result["Last Name"] = personal.lastName;
+    return result;
+  })();
+
+  // Extract document info
+  const idvDocInfo: Record<string, string> = (() => {
+    if (idvProcessed.documentInfo && typeof idvProcessed.documentInfo === "object") {
+      const flat: Record<string, string> = {};
+      for (const [k, v] of Object.entries(idvProcessed.documentInfo)) { if (isPrimitive(v)) flat[k] = safeStr(v); }
+      return flat;
+    }
+    const idData = idvRaw.responseCustomerData?.extractedIdData || {};
+    const result: Record<string, string> = {};
+    if (idData.idType) result["ID Type"] = idData.idType;
+    if (idData.idNumber) result["ID Number"] = idData.idNumber;
+    if (idData.idCountry) result["ID Country"] = idData.idCountry;
+    if (idData.idIssueCountry) result["Issue Country"] = idData.idIssueCountry;
+    if (idData.idDateOfBirth) result["Date of Birth"] = idData.idDateOfBirth;
+    if (idData.idIssueDate) result["Issue Date"] = idData.idIssueDate;
+    if (idData.idExpirationDate) result["Expiration Date"] = idData.idExpirationDate;
+    if (idData.nationality) result["Nationality"] = idData.nationality;
+    if (idData.placeOfBirth) result["Place of Birth"] = idData.placeOfBirth;
+    if (idData.ageOver18) result["Age Over 18"] = idData.ageOver18 === "Y" ? "Yes" : "No";
+    if (idData.validIdNumber) result["Valid ID Number"] = idData.validIdNumber === "Y" ? "Valid" : "Invalid";
+    if (idData.idNotExpired) result["ID Not Expired"] = idData.idNotExpired === "Y" ? "Valid" : "Expired";
+    return result;
+  })();
+
+  // IDV overall result
+  const idvOverallResult = idvProcessed.result || idvRaw.resultData?.verificationResult || null;
+  const idvCheckedAt = idvResult?.createdAt ? new Date(idvResult.createdAt).toLocaleString("en-GB") : "";
+
   const idvImages = (idvResult?.imagesUrls || []).map((url: string, idx: number) => ({
     url,
-    label: idx === 0 ? "ID Doc Front" : idx === 1 ? "ID Doc Back" : `Image ${idx + 1}`,
+    label: idx === 0 ? "ID Doc Front" : idx === 1 ? "ID Doc Back" : idx === 2 ? "ID Portrait (Cropped)" : `Image ${idx + 1}`,
   }));
 
-  // Face data
+  // IP Address from IDMission response
+  const ipFromIdv = idvRaw.status?.ipAddress || null;
+
+  // Face data — handle IDMission format
   const faceProcessed = faceResult?.processedData || {};
-  const faceScore = faceProcessed.matchScore || faceProcessed.score || faceProcessed.confidence || null;
-  const faceLivenessScore = faceProcessed.livenessScore || faceProcessed.liveness?.score || null;
-  const faceLivenessResult = faceProcessed.livenessResult || faceProcessed.liveness?.result || null;
-  const faceMatchResult = faceProcessed.result || faceProcessed.matchResult || null;
+  const faceRaw = faceResult?.rawResponse || {};
+  const faceScore = faceProcessed.matchScore || faceProcessed.score || faceProcessed.confidence || faceRaw.resultData?.matchScore || null;
+  const faceLivenessScore = faceProcessed.livenessScore || faceProcessed.liveness?.score || faceRaw.resultData?.livenessScore || null;
+  const faceLivenessResult = faceProcessed.livenessResult || faceProcessed.liveness?.result || faceRaw.resultData?.livenessResult || null;
+  const faceMatchResult = faceProcessed.result || faceProcessed.matchResult || faceRaw.resultData?.verificationResult || null;
   const selfieImage = faceResult?.imagesUrls?.[0] || null;
-  const idPortraitImage = faceResult?.imagesUrls?.[1] || idvResult?.imagesUrls?.[2] || null;
+  const idPortraitImage = faceResult?.imagesUrls?.[1] || (idvResult?.imagesUrls?.length > 2 ? idvResult.imagesUrls[2] : null);
 
   // PoA data
   const poaProcessed = poaResult?.processedData || {};
@@ -529,7 +596,7 @@ export default function ApplicantDetails() {
                     <AccordionTrigger className="text-sm font-semibold hover:no-underline py-4">
                       <div className="flex items-center justify-between w-full pr-4">
                         <span>ID Verification Results</span>
-                        <span className="text-xs text-muted-foreground font-normal">{idvResult.createdAt ? new Date(idvResult.createdAt).toLocaleString("en-GB") : ""}</span>
+                        <span className="text-xs text-muted-foreground font-normal">{idvCheckedAt}</span>
                       </div>
                     </AccordionTrigger>
                     <AccordionContent className="pb-4 space-y-4">
@@ -538,9 +605,9 @@ export default function ApplicantDetails() {
                         <div className="flex items-center gap-2">
                           <span className="text-sm text-muted-foreground">Verification Result:</span>
                           <Badge className={`rounded-full ${
-                            idvProcessed.result === "Approved" || idvProcessed.result === "passed" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
+                            idvOverallResult === "Approved" || idvOverallResult === "passed" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
                           }`}>
-                            {idvProcessed.result || idvProcessed.status || "—"}
+                            {safeStr(idvOverallResult || "—")}
                           </Badge>
                         </div>
                       </div>
