@@ -35,7 +35,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import api from "@/services/api";
+import { api } from "@/lib/api";
 
 interface AdminUser {
   _id: string;
