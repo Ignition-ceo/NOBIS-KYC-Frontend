@@ -135,7 +135,7 @@ export default function RiskFraudDetails() {
         <XCircle className="h-12 w-12 text-red-400 mb-4" />
         <p className="text-red-600 font-medium mb-1">Unable to load risk data</p>
         <p className="text-muted-foreground text-sm mb-4">{error}</p>
-        <Button variant="outline" onClick={() => navigate("/admin/risk-fraud")} className="rounded-xl">
+        <Button variant="outline" onClick={() => navigate("/client/risk-fraud")} className="rounded-xl">
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back to Queue
         </Button>
@@ -202,7 +202,7 @@ export default function RiskFraudDetails() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => navigate("/admin/risk-fraud")}
+            onClick={() => navigate("/client/risk-fraud")}
             className="rounded-xl"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />

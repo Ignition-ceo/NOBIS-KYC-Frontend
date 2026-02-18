@@ -300,7 +300,7 @@ export default function RiskFraudQueue() {
                     className={`cursor-pointer transition-colors hover:bg-muted/50 ${
                       index % 2 === 0 ? "bg-background" : "bg-muted/20"
                     }`}
-                    onClick={() => navigate(`/admin/risk-fraud/${item.applicantId}`)}
+                    onClick={() => navigate(`/client/risk-fraud/${item.applicantId}`)}
                   >
                     <TableCell>
                       <div className="flex items-center gap-3">
@@ -372,7 +372,7 @@ export default function RiskFraudQueue() {
                         className="h-8 w-8 rounded-lg hover:bg-primary/10"
                         onClick={(e) => {
                           e.stopPropagation();
-                          navigate(`/admin/risk-fraud/${item.applicantId}`);
+                          navigate(`/client/risk-fraud/${item.applicantId}`);
                         }}
                       >
                         <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
