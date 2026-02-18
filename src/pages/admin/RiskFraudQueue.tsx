@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Filter, ArrowUpRight, AlertTriangle, CheckCircle, XCircle, Clock } from "lucide-react";
+import { Search, Filter, ArrowUpRight, AlertTriangle, CheckCircle, XCircle, Clock, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -20,78 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-
-// Mock data for risk assessment queue
-interface RiskQueueItem {
-  id: string;
-  applicantId: string;
-  fullName: string;
-  selfieUrl?: string;
-  riskScore: number;
-  riskLevel: "LOW" | "MEDIUM" | "HIGH";
-  recommendedAction: "APPROVE" | "REVIEW" | "REJECT";
-  flagsCount: number;
-  status: "PENDING" | "REVIEWED" | "ESCALATED";
-  assessedAt: string;
-}
-
-const mockRiskQueue: RiskQueueItem[] = [
-  {
-    id: "risk-1",
-    applicantId: "1",
-    fullName: "Mario Francisco De La Cruz",
-    riskScore: 50,
-    riskLevel: "MEDIUM",
-    recommendedAction: "REVIEW",
-    flagsCount: 1,
-    status: "REVIEWED",
-    assessedAt: "2025-07-04T13:01:04Z",
-  },
-  {
-    id: "risk-2",
-    applicantId: "2",
-    fullName: "Ana María Rodríguez",
-    riskScore: 15,
-    riskLevel: "LOW",
-    recommendedAction: "APPROVE",
-    flagsCount: 0,
-    status: "REVIEWED",
-    assessedAt: "2025-07-03T10:22:00Z",
-  },
-  {
-    id: "risk-3",
-    applicantId: "3",
-    fullName: "Carlos Enrique Méndez",
-    riskScore: 78,
-    riskLevel: "HIGH",
-    recommendedAction: "REJECT",
-    flagsCount: 4,
-    status: "ESCALATED",
-    assessedAt: "2025-07-02T08:45:30Z",
-  },
-  {
-    id: "risk-4",
-    applicantId: "4",
-    fullName: "Luisa Fernanda García",
-    riskScore: 42,
-    riskLevel: "MEDIUM",
-    recommendedAction: "REVIEW",
-    flagsCount: 2,
-    status: "PENDING",
-    assessedAt: "2025-07-01T15:30:00Z",
-  },
-  {
-    id: "risk-5",
-    applicantId: "5",
-    fullName: "José Manuel Pérez",
-    riskScore: 85,
-    riskLevel: "HIGH",
-    recommendedAction: "REJECT",
-    flagsCount: 5,
-    status: "PENDING",
-    assessedAt: "2025-06-30T09:15:00Z",
-  },
-];
+import { fetchRiskEvaluations, type RiskQueueItem } from "@/services/riskEvaluation";
 
 const riskLevelConfig: Record<string, { label: string; className: string }> = {
   LOW: {
@@ -146,15 +75,44 @@ export default function RiskFraudQueue() {
   const [searchQuery, setSearchQuery] = useState("");
   const [levelFilter, setLevelFilter] = useState("all");
   const [sortBy, setSortBy] = useState("newest");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [queueItems, setQueueItems] = useState<RiskQueueItem[]>([]);
+  const [stats, setStats] = useState({ total: 0, high: 0, medium: 0, low: 0 });
 
-  // Filter and sort queue
-  const filteredQueue = mockRiskQueue
+  // Fetch risk evaluations from API
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const response = await fetchRiskEvaluations({
+          riskLevel: levelFilter !== "all" ? levelFilter : undefined,
+          search: searchQuery || undefined,
+        });
+        setQueueItems(response.data);
+        setStats(response.stats);
+      } catch (err: any) {
+        console.error("Failed to fetch risk evaluations:", err);
+        setError(err?.response?.data?.message || "Failed to load risk assessments");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, [levelFilter]); // Refetch when filter changes
+
+  // Client-side search and sort (data already loaded)
+  const filteredQueue = queueItems
     .filter((item) => {
-      const matchesSearch =
-        item.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.applicantId.includes(searchQuery);
-      const matchesLevel = levelFilter === "all" || item.riskLevel === levelFilter;
-      return matchesSearch && matchesLevel;
+      if (!searchQuery) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        item.fullName.toLowerCase().includes(q) ||
+        item.applicantId.toString().includes(q) ||
+        item.email?.toLowerCase().includes(q)
+      );
     })
     .sort((a, b) => {
       switch (sortBy) {
@@ -168,14 +126,6 @@ export default function RiskFraudQueue() {
           return new Date(b.assessedAt).getTime() - new Date(a.assessedAt).getTime();
       }
     });
-
-  // Stats
-  const stats = {
-    total: mockRiskQueue.length,
-    high: mockRiskQueue.filter((i) => i.riskLevel === "HIGH").length,
-    medium: mockRiskQueue.filter((i) => i.riskLevel === "MEDIUM").length,
-    low: mockRiskQueue.filter((i) => i.riskLevel === "LOW").length,
-  };
 
   const getInitials = (name: string) => {
     return name
@@ -305,118 +255,137 @@ export default function RiskFraudQueue() {
           </div>
         </div>
 
-        {/* Queue Table */}
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/30 hover:bg-muted/30">
-              <TableHead className="font-semibold">Applicant</TableHead>
-              <TableHead className="font-semibold">Risk Score</TableHead>
-              <TableHead className="font-semibold">Risk Level</TableHead>
-              <TableHead className="font-semibold">Recommended Action</TableHead>
-              <TableHead className="font-semibold">Flags</TableHead>
-              <TableHead className="font-semibold">Status</TableHead>
-              <TableHead className="font-semibold">Assessed</TableHead>
-              <TableHead className="w-[60px]"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredQueue.map((item, index) => {
-              const levelCfg = riskLevelConfig[item.riskLevel];
-              const actionCfg = actionConfig[item.recommendedAction];
-              const statusCfg = statusConfig[item.status];
-              const StatusIcon = statusCfg.icon;
+        {/* Loading State */}
+        {loading && (
+          <div className="flex flex-col items-center justify-center py-16">
+            <Loader2 className="h-8 w-8 text-primary animate-spin mb-3" />
+            <p className="text-muted-foreground text-sm">Loading risk assessments...</p>
+          </div>
+        )}
 
-              return (
-                <TableRow
-                  key={item.id}
-                  className={`cursor-pointer transition-colors hover:bg-muted/50 ${
-                    index % 2 === 0 ? "bg-background" : "bg-muted/20"
-                  }`}
-                  onClick={() => navigate(`/admin/risk-fraud/${item.applicantId}`)}
-                >
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <Avatar className="h-9 w-9 border border-border/50">
-                        <AvatarImage src={item.selfieUrl} />
-                        <AvatarFallback className="text-xs font-medium bg-primary/10 text-primary">
-                          {getInitials(item.fullName)}
-                        </AvatarFallback>
-                      </Avatar>
+        {/* Error State */}
+        {error && !loading && (
+          <div className="flex flex-col items-center justify-center py-16">
+            <XCircle className="h-12 w-12 text-red-400 mb-4" />
+            <p className="text-red-600 font-medium mb-1">Failed to load data</p>
+            <p className="text-muted-foreground text-sm">{error}</p>
+          </div>
+        )}
+
+        {/* Queue Table */}
+        {!loading && !error && (
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/30 hover:bg-muted/30">
+                <TableHead className="font-semibold">Applicant</TableHead>
+                <TableHead className="font-semibold">Risk Score</TableHead>
+                <TableHead className="font-semibold">Risk Level</TableHead>
+                <TableHead className="font-semibold">Recommended Action</TableHead>
+                <TableHead className="font-semibold">Flags</TableHead>
+                <TableHead className="font-semibold">Status</TableHead>
+                <TableHead className="font-semibold">Assessed</TableHead>
+                <TableHead className="w-[60px]"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredQueue.map((item, index) => {
+                const levelCfg = riskLevelConfig[item.riskLevel] || riskLevelConfig.LOW;
+                const actionCfg = actionConfig[item.recommendedAction] || actionConfig.REVIEW;
+                const statusCfg = statusConfig[item.status] || statusConfig.PENDING;
+                const StatusIcon = statusCfg.icon;
+
+                return (
+                  <TableRow
+                    key={item._id}
+                    className={`cursor-pointer transition-colors hover:bg-muted/50 ${
+                      index % 2 === 0 ? "bg-background" : "bg-muted/20"
+                    }`}
+                    onClick={() => navigate(`/admin/risk-fraud/${item.applicantId}`)}
+                  >
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-9 w-9 border border-border/50">
+                          <AvatarImage src={item.selfieUrl || undefined} />
+                          <AvatarFallback className="text-xs font-medium bg-primary/10 text-primary">
+                            {getInitials(item.fullName)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="font-semibold text-foreground text-sm">
+                            {item.fullName}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            ID: {item.applicantIdRemote || item.applicantId}
+                          </p>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <span className="font-semibold text-foreground">
+                        {item.riskScore} pts
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${levelCfg.className}`}
+                      >
+                        {levelCfg.label}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${actionCfg.className}`}
+                      >
+                        {actionCfg.label}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-sm text-muted-foreground">
+                        {item.flagsCount} flag{item.flagsCount !== 1 ? "s" : ""}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={`rounded-lg px-2.5 py-1 text-xs font-semibold inline-flex items-center gap-1.5 ${statusCfg.className}`}
+                      >
+                        <StatusIcon className="h-3 w-3" />
+                        {statusCfg.label}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
                       <div>
                         <p className="font-semibold text-foreground text-sm">
-                          {item.fullName}
+                          {formatDate(item.assessedAt)}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          ID: {item.applicantId}
+                          {formatTime(item.assessedAt)} (GMT-4)
                         </p>
                       </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <span className="font-semibold text-foreground">
-                      {item.riskScore} pts
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${levelCfg.className}`}
-                    >
-                      {levelCfg.label}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${actionCfg.className}`}
-                    >
-                      {actionCfg.label}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-sm text-muted-foreground">
-                      {item.flagsCount} flag{item.flagsCount !== 1 ? "s" : ""}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={`rounded-lg px-2.5 py-1 text-xs font-semibold inline-flex items-center gap-1.5 ${statusCfg.className}`}
-                    >
-                      <StatusIcon className="h-3 w-3" />
-                      {statusCfg.label}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div>
-                      <p className="font-semibold text-foreground text-sm">
-                        {formatDate(item.assessedAt)}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatTime(item.assessedAt)} (GMT-4)
-                      </p>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 rounded-lg hover:bg-primary/10"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigate(`/admin/risk-fraud/${item.applicantId}`);
-                      }}
-                    >
-                      <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 rounded-lg hover:bg-primary/10"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/admin/risk-fraud/${item.applicantId}`);
+                        }}
+                      >
+                        <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
 
-        {filteredQueue.length === 0 && (
+        {!loading && !error && filteredQueue.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16">
             <AlertTriangle className="h-12 w-12 text-muted-foreground mb-4" />
             <p className="text-muted-foreground">No risk assessments found</p>

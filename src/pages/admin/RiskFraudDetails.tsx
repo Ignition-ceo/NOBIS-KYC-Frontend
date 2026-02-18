@@ -1,8 +1,9 @@
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Download, AlertTriangle, CheckCircle, Clock } from "lucide-react";
+import { ArrowLeft, Download, AlertTriangle, CheckCircle, XCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
 import {
   Accordion,
@@ -10,105 +11,8 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-
-// Mock applicant data with risk information
-const mockApplicants: Record<string, any> = {
-  "1": {
-    id: "1",
-    applicantId: "NB-2025-001847",
-    fullName: "Mario Francisco De La Cruz",
-    email: "mario.delacruz@example.com",
-    risk: {
-      score: 50,
-      level: "MEDIUM",
-      recommendedAction: "REVIEW",
-      assessedAt: "July 04, 2025 13:01:04",
-      breakdownLeft: [
-        "Email Domain (Disposable): +25 pts",
-        "Biometric Hash Reuse: +50 pts",
-        "IP ≠ ID Country: +15 pts",
-        "Geolocation Risk: +25 pts",
-      ],
-      breakdownRight: [
-        "Phone Reuse (1 user): +40 pts",
-        "IP Risk (VPN/Proxy): +30 pts",
-        "Phone Area Mismatch: +15 pts",
-      ],
-      flags: ["Biometric data already present in existing user record"],
-      raw: {
-        risk_score: 50,
-        risk_level: "MEDIUM",
-        recommended_action: "REVIEW",
-        flags_detected: 1,
-      },
-    },
-  },
-  "2": {
-    id: "2",
-    applicantId: "NB-2025-001846",
-    fullName: "Ana María Rodríguez",
-    email: "ana.rodriguez@example.com",
-    risk: {
-      score: 15,
-      level: "LOW",
-      recommendedAction: "APPROVE",
-      assessedAt: "July 03, 2025 10:22:00",
-      breakdownLeft: [
-        "Email Domain: +0 pts",
-        "Biometric Hash: +0 pts",
-        "IP Match: +0 pts",
-        "Geolocation: +15 pts",
-      ],
-      breakdownRight: [
-        "Phone Status: +0 pts",
-        "IP Risk: +0 pts",
-        "Phone Area: +0 pts",
-      ],
-      flags: [],
-      raw: {
-        risk_score: 15,
-        risk_level: "LOW",
-        recommended_action: "APPROVE",
-        flags_detected: 0,
-      },
-    },
-  },
-  "3": {
-    id: "3",
-    applicantId: "NB-2025-001845",
-    fullName: "Carlos Enrique Méndez",
-    email: "carlos.mendez@example.com",
-    risk: {
-      score: 78,
-      level: "HIGH",
-      recommendedAction: "REJECT",
-      assessedAt: "July 02, 2025 08:45:30",
-      breakdownLeft: [
-        "Email Domain (Disposable): +25 pts",
-        "Biometric Hash Reuse: +50 pts",
-        "IP ≠ ID Country: +15 pts",
-        "Geolocation Risk: +25 pts",
-      ],
-      breakdownRight: [
-        "Phone Reuse (3 users): +40 pts",
-        "IP Risk (VPN/Proxy): +30 pts",
-        "Phone Area Mismatch: +15 pts",
-      ],
-      flags: [
-        "Biometric data already present in existing user record",
-        "Multiple phone number reuse detected",
-        "VPN/Proxy detected",
-        "Disposable email domain",
-      ],
-      raw: {
-        risk_score: 78,
-        risk_level: "HIGH",
-        recommended_action: "REJECT",
-        flags_detected: 4,
-      },
-    },
-  },
-};
+import { getRiskEvaluationForApplicant, updateRiskReviewStatus } from "@/services/riskEvaluation";
+import { getApplicantDetails } from "@/services/applicant";
 
 const riskLevelConfig: Record<string, { label: string; className: string; rangeText: string }> = {
   LOW: {
@@ -143,14 +47,118 @@ const actionConfig: Record<string, { label: string; className: string }> = {
   },
 };
 
+// Risk scoring breakdown labels based on what the risk API evaluates
+const scoringBreakdown = {
+  left: [
+    { key: "email_domain", label: "Email Domain (Disposable)" },
+    { key: "biometric_hash", label: "Biometric Hash Reuse" },
+    { key: "ip_country_mismatch", label: "IP ≠ ID Country" },
+    { key: "geolocation_risk", label: "Geolocation Risk" },
+  ],
+  right: [
+    { key: "phone_reuse", label: "Phone Reuse" },
+    { key: "ip_risk", label: "IP Risk (VPN/Proxy)" },
+    { key: "phone_area_mismatch", label: "Phone Area Mismatch" },
+  ],
+};
+
 export default function RiskFraudDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [riskData, setRiskData] = useState<any>(null);
+  const [applicant, setApplicant] = useState<any>(null);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
 
-  const applicant = mockApplicants[id || "1"] || mockApplicants["1"];
-  const risk = applicant.risk;
-  const levelCfg = riskLevelConfig[risk.level];
-  const actionCfg = actionConfig[risk.recommendedAction];
+  useEffect(() => {
+    if (!id) return;
+
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const [riskResult, applicantResult] = await Promise.allSettled([
+          getRiskEvaluationForApplicant(id),
+          getApplicantDetails(id),
+        ]);
+
+        if (riskResult.status === "fulfilled") {
+          setRiskData(riskResult.value);
+        } else {
+          setError("Risk evaluation data not found for this applicant.");
+          return;
+        }
+
+        if (applicantResult.status === "fulfilled") {
+          setApplicant(applicantResult.value);
+        }
+      } catch (err: any) {
+        setError(err?.response?.data?.message || "Failed to load risk data");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, [id]);
+
+  const handleStatusUpdate = async (status: string) => {
+    if (!riskData?._id) return;
+    try {
+      setUpdatingStatus(true);
+      await updateRiskReviewStatus(riskData._id, status);
+      setRiskData((prev: any) => ({
+        ...prev,
+        processedData: { ...prev?.processedData, reviewStatus: status },
+      }));
+    } catch (err) {
+      console.error("Failed to update status:", err);
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-32">
+        <Loader2 className="h-8 w-8 text-primary animate-spin mb-3" />
+        <p className="text-muted-foreground text-sm">Loading risk assessment...</p>
+      </div>
+    );
+  }
+
+  if (error || !riskData) {
+    return (
+      <div className="flex flex-col items-center justify-center py-32">
+        <XCircle className="h-12 w-12 text-red-400 mb-4" />
+        <p className="text-red-600 font-medium mb-1">Unable to load risk data</p>
+        <p className="text-muted-foreground text-sm mb-4">{error}</p>
+        <Button variant="outline" onClick={() => navigate("/admin/risk-fraud")} className="rounded-xl">
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Queue
+        </Button>
+      </div>
+    );
+  }
+
+  // Extract data from the stored verification result
+  const raw = riskData.rawResponse || {};
+  const riskScore = raw.score ?? 0;
+  const riskLevel = (raw.risk || "low").toUpperCase();
+  const recommendedAction = (raw.outcome || "review").toUpperCase();
+  const flags: string[] = raw.flags || [];
+  const requestPayload = raw.requestPayload || {};
+  const assessedAt = riskData.createdAt || riskData.updatedAt || "";
+  const reviewStatus = riskData.processedData?.reviewStatus || "PENDING";
+
+  const fullName = applicant?.name || requestPayload.full_name || "Unknown";
+  const applicantIdRemote = applicant?.applicantIdRemote || id;
+  const email = applicant?.email || requestPayload.email || "";
+
+  const levelCfg = riskLevelConfig[riskLevel] || riskLevelConfig.LOW;
+  const actionCfg = actionConfig[recommendedAction] || actionConfig.REVIEW;
 
   const getInitials = (name: string) => {
     return name
@@ -161,14 +169,29 @@ export default function RiskFraudDetails() {
       .toUpperCase();
   };
 
-  // Calculate stroke for donut
+  const formatAssessedAt = (dateStr: string) => {
+    if (!dateStr) return "N/A";
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("en-US", {
+      month: "long",
+      day: "2-digit",
+      year: "numeric",
+    }) + " " + date.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+  };
+
+  // Donut chart
   const circumference = 2 * Math.PI * 40;
-  const strokeDasharray = `${(risk.score / 100) * circumference} ${circumference}`;
+  const strokeDasharray = `${(riskScore / 100) * circumference} ${circumference}`;
 
   const getScoreColor = (score: number) => {
-    if (score < 35) return "#10B981"; // emerald
-    if (score < 65) return "#F59E0B"; // amber
-    return "#EF4444"; // red
+    if (score < 35) return "#10B981";
+    if (score < 65) return "#F59E0B";
+    return "#EF4444";
   };
 
   return (
@@ -188,25 +211,53 @@ export default function RiskFraudDetails() {
           <div className="flex items-center gap-3">
             <Avatar className="h-10 w-10 border border-border/50">
               <AvatarFallback className="text-sm font-medium bg-primary/10 text-primary">
-                {getInitials(applicant.fullName)}
+                {getInitials(fullName)}
               </AvatarFallback>
             </Avatar>
             <div>
-              <h1 className="text-xl font-bold text-foreground">{applicant.fullName}</h1>
-              <p className="text-sm text-muted-foreground">{applicant.applicantId}</p>
+              <h1 className="text-xl font-bold text-foreground">{fullName}</h1>
+              <p className="text-sm text-muted-foreground">{applicantIdRemote}</p>
             </div>
           </div>
         </div>
-        <Button
-          variant="outline"
-          className="rounded-xl h-10"
-          onClick={() => {
-            console.log("Export PDF report for", applicant.applicantId);
-          }}
-        >
-          <Download className="h-4 w-4 mr-2" />
-          Export PDF Report
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* Review Status Actions */}
+          {reviewStatus === "PENDING" && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-xl text-emerald-700 border-emerald-300 hover:bg-emerald-50"
+                disabled={updatingStatus}
+                onClick={() => handleStatusUpdate("REVIEWED")}
+              >
+                <CheckCircle className="h-4 w-4 mr-1.5" />
+                Mark Reviewed
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-xl text-red-700 border-red-300 hover:bg-red-50"
+                disabled={updatingStatus}
+                onClick={() => handleStatusUpdate("ESCALATED")}
+              >
+                <AlertTriangle className="h-4 w-4 mr-1.5" />
+                Escalate
+              </Button>
+            </>
+          )}
+          <Button
+            variant="outline"
+            className="rounded-xl h-10"
+            onClick={() => {
+              // TODO: PDF export
+              console.log("Export PDF report for", applicantIdRemote);
+            }}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Export PDF Report
+          </Button>
+        </div>
       </div>
 
       {/* Risk Assessment Results Header */}
@@ -217,7 +268,7 @@ export default function RiskFraudDetails() {
             variant="outline"
             className="rounded-full px-3 py-1 text-xs font-medium bg-muted/50 border-border text-muted-foreground"
           >
-            {risk.assessedAt}
+            {formatAssessedAt(assessedAt)}
           </Badge>
         </div>
       </div>
@@ -229,7 +280,7 @@ export default function RiskFraudDetails() {
           {/* Donut Score Block */}
           <div className="bg-muted/30 rounded-xl p-4 border border-border/50">
             <p className="font-semibold text-foreground mb-3">
-              Risk Score: {risk.score} Points
+              Risk Score: {riskScore} Points
             </p>
             <div className="flex items-center justify-center">
               <svg width="140" height="140" viewBox="0 0 100 100" className="transform -rotate-90">
@@ -247,7 +298,7 @@ export default function RiskFraudDetails() {
                   cy="50"
                   r="40"
                   fill="none"
-                  stroke={getScoreColor(risk.score)}
+                  stroke={getScoreColor(riskScore)}
                   strokeWidth="10"
                   strokeDasharray={strokeDasharray}
                   strokeLinecap="round"
@@ -261,7 +312,7 @@ export default function RiskFraudDetails() {
                   className="text-2xl font-bold fill-foreground"
                   transform="rotate(90 50 50)"
                 >
-                  {risk.score}
+                  {riskScore}
                 </text>
                 <text
                   x="50"
@@ -308,13 +359,13 @@ export default function RiskFraudDetails() {
         <p className="text-xs text-muted-foreground mb-4">How Risk Score is Calculated:</p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-2">
-            {risk.breakdownLeft.map((item: string, idx: number) => (
-              <p key={idx} className="text-xs text-muted-foreground">• {item}</p>
+            {scoringBreakdown.left.map((item, idx) => (
+              <p key={idx} className="text-xs text-muted-foreground">• {item.label}</p>
             ))}
           </div>
           <div className="space-y-2">
-            {risk.breakdownRight.map((item: string, idx: number) => (
-              <p key={idx} className="text-xs text-muted-foreground">• {item}</p>
+            {scoringBreakdown.right.map((item, idx) => (
+              <p key={idx} className="text-xs text-muted-foreground">• {item.label}</p>
             ))}
           </div>
         </div>
@@ -323,11 +374,11 @@ export default function RiskFraudDetails() {
       {/* Detected Risk Flags */}
       <div className="stat-card">
         <h3 className="text-sm font-semibold text-foreground mb-3">
-          Detected Risk Flags ({risk.flags.length})
+          Detected Risk Flags ({flags.length})
         </h3>
-        {risk.flags.length > 0 ? (
+        {flags.length > 0 ? (
           <div className="space-y-2">
-            {risk.flags.map((flag: string, idx: number) => (
+            {flags.map((flag: string, idx: number) => (
               <div key={idx} className="flex items-center gap-2.5">
                 <span className="h-2 w-2 rounded-full bg-amber-500" />
                 <p className="text-xs text-muted-foreground">{flag}</p>
@@ -348,31 +399,58 @@ export default function RiskFraudDetails() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="flex justify-between items-center py-2 border-b border-border/30">
             <span className="text-xs text-muted-foreground">Assessment Date:</span>
-            <span className="text-xs font-medium text-foreground">{risk.assessedAt}</span>
+            <span className="text-xs font-medium text-foreground">{formatAssessedAt(assessedAt)}</span>
           </div>
           <div className="py-2 border-b border-border/30">
             <div className="flex justify-between items-center mb-2">
               <span className="text-xs text-muted-foreground">Total Risk Points:</span>
-              <span className="text-xs font-medium text-foreground">{risk.score} points</span>
+              <span className="text-xs font-medium text-foreground">{riskScore} points</span>
             </div>
-            <Progress value={risk.score} className="h-2" />
+            <Progress value={riskScore} className="h-2" />
           </div>
           <div className="flex justify-between items-center py-2 border-b border-border/30">
             <span className="text-xs text-muted-foreground">Risk Classification:</span>
             <span className="text-xs font-medium text-foreground">
-              {risk.level} ({levelCfg.rangeText})
+              {riskLevel} ({levelCfg.rangeText})
             </span>
           </div>
           <div className="flex justify-between items-center py-2 border-b border-border/30">
             <span className="text-xs text-muted-foreground">System Recommendation:</span>
-            <span className="text-xs font-medium text-foreground">{risk.recommendedAction}</span>
+            <span className="text-xs font-medium text-foreground">{recommendedAction}</span>
+          </div>
+          <div className="flex justify-between items-center py-2 border-b border-border/30">
+            <span className="text-xs text-muted-foreground">Risk Flags Detected:</span>
+            <span className="text-xs font-medium text-foreground">{flags.length}</span>
           </div>
           <div className="flex justify-between items-center py-2">
-            <span className="text-xs text-muted-foreground">Risk Flags Detected:</span>
-            <span className="text-xs font-medium text-foreground">{risk.flags.length}</span>
+            <span className="text-xs text-muted-foreground">Applicant Email:</span>
+            <span className="text-xs font-medium text-foreground">{email}</span>
           </div>
         </div>
       </div>
+
+      {/* Input Data (what was sent to risk API) */}
+      {Object.keys(requestPayload).length > 0 && (
+        <Accordion type="single" collapsible className="stat-card">
+          <AccordionItem value="input" className="border-none">
+            <AccordionTrigger className="text-sm font-semibold text-foreground py-0 hover:no-underline">
+              View Input Data
+            </AccordionTrigger>
+            <AccordionContent className="pt-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {Object.entries(requestPayload).map(([key, value]) => (
+                  <div key={key} className="flex justify-between items-center py-1.5 border-b border-border/20">
+                    <span className="text-xs text-muted-foreground">{key}:</span>
+                    <span className="text-xs font-medium text-foreground truncate max-w-[200px]">
+                      {String(value)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      )}
 
       {/* Raw Response Accordion */}
       <Accordion type="single" collapsible className="stat-card">
@@ -382,7 +460,7 @@ export default function RiskFraudDetails() {
           </AccordionTrigger>
           <AccordionContent className="pt-4">
             <pre className="bg-muted/50 rounded-xl p-4 text-xs overflow-auto max-h-64 text-muted-foreground">
-              {JSON.stringify(risk.raw, null, 2)}
+              {JSON.stringify(raw, null, 2)}
             </pre>
           </AccordionContent>
         </AccordionItem>
