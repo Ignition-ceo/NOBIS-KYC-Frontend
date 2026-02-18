@@ -172,6 +172,7 @@ export default function Applicants() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
 
   const loadApplicants = useCallback(async () => {
@@ -194,6 +195,7 @@ export default function Applicants() {
 
       const params: Record<string, any> = {
         page,
+        limit: pageSize,
         searchText: searchQuery || undefined,
         verificationStatus: verificationStatus || undefined,
         sortBy: sortBy === "newest" || sortBy === "oldest" ? "createdAt" : undefined,
@@ -216,7 +218,7 @@ export default function Applicants() {
     } finally {
       setLoading(false);
     }
-  }, [page, searchQuery, activeTab, statusFilter, sortBy]);
+  }, [page, pageSize, searchQuery, activeTab, statusFilter, sortBy]);
 
   useEffect(() => {
     loadApplicants();
@@ -225,7 +227,7 @@ export default function Applicants() {
   // Reset page when filters change
   useEffect(() => {
     setPage(1);
-  }, [searchQuery, activeTab, statusFilter, sortBy]);
+  }, [searchQuery, activeTab, statusFilter, sortBy, pageSize]);
 
   const stats = useMemo(
     () => ({
@@ -399,6 +401,67 @@ export default function Applicants() {
           </div>
         ) : (
           <>
+            {/* Bulk Actions Bar */}
+            {selectedIds.size > 0 && (
+              <div className="flex items-center gap-3 mb-3 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                <span className="text-sm font-medium text-primary">
+                  {selectedIds.size} selected
+                </span>
+                <div className="h-4 w-px bg-primary/20" />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 gap-1.5 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50"
+                  onClick={async () => {
+                    for (const id of selectedIds) {
+                      await handleStatusChange(id, "APPROVED");
+                    }
+                    setSelectedIds(new Set());
+                  }}
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Approve
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 gap-1.5 text-amber-700 hover:text-amber-800 hover:bg-amber-50"
+                  onClick={async () => {
+                    for (const id of selectedIds) {
+                      await handleStatusChange(id, "NEEDS_REVIEW");
+                    }
+                    setSelectedIds(new Set());
+                  }}
+                >
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Needs Review
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 gap-1.5 text-red-600 hover:text-red-700 hover:bg-red-50"
+                  onClick={async () => {
+                    for (const id of selectedIds) {
+                      await handleStatusChange(id, "REJECTED");
+                    }
+                    setSelectedIds(new Set());
+                  }}
+                >
+                  <XCircle className="h-3.5 w-3.5" />
+                  Reject
+                </Button>
+                <div className="flex-1" />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-muted-foreground hover:text-foreground"
+                  onClick={() => setSelectedIds(new Set())}
+                >
+                  Clear selection
+                </Button>
+              </div>
+            )}
+
             {/* Table */}
             <div className="rounded-lg border bg-card overflow-hidden">
               <Table>
@@ -589,29 +652,68 @@ export default function Applicants() {
             </div>
 
             {/* Pagination */}
-            {total > 10 && (
-              <div className="flex items-center justify-center gap-2 mt-4">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={page <= 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  ← Previous
-                </Button>
-                <span className="text-sm text-muted-foreground">
-                  Page {page} of {Math.ceil(total / 10)}
-                </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={page >= Math.ceil(total / 10)}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  Next →
-                </Button>
+            <div className="flex items-center justify-between mt-4 px-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Rows per page</span>
+                <Select value={pageSize.toString()} onValueChange={(v) => setPageSize(Number(v))}>
+                  <SelectTrigger className="w-[70px] h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="25">25</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-            )}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">
+                  {Math.min((page - 1) * pageSize + 1, total)}–{Math.min(page * pageSize, total)} of {total}
+                </span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    disabled={page <= 1}
+                    onClick={() => setPage(1)}
+                  >
+                    <span className="text-xs">«</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  >
+                    <span className="text-xs">‹</span>
+                  </Button>
+                  <span className="px-2 text-sm font-medium">
+                    {page} / {Math.max(1, Math.ceil(total / pageSize))}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    disabled={page >= Math.ceil(total / pageSize)}
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    <span className="text-xs">›</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    disabled={page >= Math.ceil(total / pageSize)}
+                    onClick={() => setPage(Math.ceil(total / pageSize))}
+                  >
+                    <span className="text-xs">»</span>
+                  </Button>
+                </div>
+              </div>
+            </div>
           </>
         )}
       </div>

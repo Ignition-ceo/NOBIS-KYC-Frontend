@@ -79,6 +79,8 @@ export default function RiskFraudQueue() {
   const [error, setError] = useState<string | null>(null);
   const [queueItems, setQueueItems] = useState<RiskQueueItem[]>([]);
   const [stats, setStats] = useState({ total: 0, high: 0, medium: 0, low: 0 });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // Fetch risk evaluations from API
   useEffect(() => {
@@ -126,6 +128,13 @@ export default function RiskFraudQueue() {
           return new Date(b.assessedAt).getTime() - new Date(a.assessedAt).getTime();
       }
     });
+
+  // Reset page on filter/search/sort change
+  useEffect(() => { setPage(1); }, [searchQuery, levelFilter, sortBy, pageSize]);
+
+  const totalFiltered = filteredQueue.length;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+  const paginatedQueue = filteredQueue.slice((page - 1) * pageSize, page * pageSize);
 
   const getInitials = (name: string) => {
     return name
@@ -288,7 +297,7 @@ export default function RiskFraudQueue() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredQueue.map((item, index) => {
+              {paginatedQueue.map((item, index) => {
                 const levelCfg = riskLevelConfig[item.riskLevel] || riskLevelConfig.LOW;
                 const actionCfg = actionConfig[item.recommendedAction] || actionConfig.REVIEW;
                 const statusCfg = statusConfig[item.status] || statusConfig.PENDING;
@@ -383,9 +392,39 @@ export default function RiskFraudQueue() {
               })}
             </TableBody>
           </Table>
+
+          {/* Pagination */}
+          <div className="flex items-center justify-between mt-4 px-1">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Rows per page</span>
+              <Select value={pageSize.toString()} onValueChange={(v) => setPageSize(Number(v))}>
+                <SelectTrigger className="w-[70px] h-8">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="25">25</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">
+                {totalFiltered > 0 ? `${(page - 1) * pageSize + 1}\u2013${Math.min(page * pageSize, totalFiltered)} of ${totalFiltered}` : "0 results"}
+              </span>
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => setPage(1)}><span className="text-xs">\u00ab</span></Button>
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}><span className="text-xs">\u2039</span></Button>
+                <span className="px-2 text-sm font-medium">{page} / {totalPages}</span>
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}><span className="text-xs">\u203a</span></Button>
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages} onClick={() => setPage(totalPages)}><span className="text-xs">\u00bb</span></Button>
+              </div>
+            </div>
+          </div>
         )}
 
-        {!loading && !error && filteredQueue.length === 0 && (
+        {!loading && !error && totalFiltered === 0 && (
           <div className="flex flex-col items-center justify-center py-16">
             <AlertTriangle className="h-12 w-12 text-muted-foreground mb-4" />
             <p className="text-muted-foreground">No risk assessments found</p>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ShieldCheck,
@@ -146,6 +146,8 @@ export default function AmlScreening() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [riskFilter, setRiskFilter] = useState("All");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // Filter queue
   const filteredQueue = mockAmlQueue.filter((item) => {
@@ -165,6 +167,13 @@ export default function AmlScreening() {
     hits: mockAmlQueue.filter((i) => i.status === "HIT").length,
     clear: mockAmlQueue.filter((i) => i.status === "CLEAR").length,
   };
+
+  // Reset page on filter change
+  useEffect(() => { setPage(1); }, [searchQuery, statusFilter, riskFilter, pageSize]);
+
+  const totalFiltered = filteredQueue.length;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+  const paginatedQueue = filteredQueue.slice((page - 1) * pageSize, page * pageSize);
 
   const getInitials = (name: string) =>
     name
@@ -291,7 +300,7 @@ export default function AmlScreening() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredQueue.length === 0 ? (
+              {totalFiltered === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="h-32 text-center">
                     <div className="flex flex-col items-center justify-center text-muted-foreground">
@@ -416,6 +425,36 @@ export default function AmlScreening() {
               )}
             </TableBody>
           </Table>
+
+          {/* Pagination */}
+          <div className="flex items-center justify-between mt-4 px-1">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Rows per page</span>
+              <Select value={pageSize.toString()} onValueChange={(v) => setPageSize(Number(v))}>
+                <SelectTrigger className="w-[70px] h-8">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="25">25</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">
+                {totalFiltered > 0 ? `${(page - 1) * pageSize + 1}\u2013${Math.min(page * pageSize, totalFiltered)} of ${totalFiltered}` : "0 results"}
+              </span>
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => setPage(1)}><span className="text-xs">\u00ab</span></Button>
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}><span className="text-xs">\u2039</span></Button>
+                <span className="px-2 text-sm font-medium">{page} / {totalPages}</span>
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}><span className="text-xs">\u203a</span></Button>
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages} onClick={() => setPage(totalPages)}><span className="text-xs">\u00bb</span></Button>
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>
