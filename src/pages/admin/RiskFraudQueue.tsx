@@ -283,6 +283,7 @@ export default function RiskFraudQueue() {
 
         {/* Queue Table */}
         {!loading && !error && (
+          <>
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/30 hover:bg-muted/30">
@@ -411,17 +412,18 @@ export default function RiskFraudQueue() {
             </div>
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">
-                {totalFiltered > 0 ? `${(page - 1) * pageSize + 1}\u2013${Math.min(page * pageSize, totalFiltered)} of ${totalFiltered}` : "0 results"}
+                {totalFiltered > 0 ? `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, totalFiltered)} of ${totalFiltered}` : "0 results"}
               </span>
               <div className="flex items-center gap-1">
-                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => setPage(1)}><span className="text-xs">\u00ab</span></Button>
-                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}><span className="text-xs">\u2039</span></Button>
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => setPage(1)}><span className="text-xs">«</span></Button>
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}><span className="text-xs">‹</span></Button>
                 <span className="px-2 text-sm font-medium">{page} / {totalPages}</span>
-                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}><span className="text-xs">\u203a</span></Button>
-                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages} onClick={() => setPage(totalPages)}><span className="text-xs">\u00bb</span></Button>
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}><span className="text-xs">›</span></Button>
+                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages} onClick={() => setPage(totalPages)}><span className="text-xs">»</span></Button>
               </div>
             </div>
           </div>
+          </>
         )}
 
         {!loading && !error && totalFiltered === 0 && (
