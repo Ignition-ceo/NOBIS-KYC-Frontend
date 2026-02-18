@@ -12,6 +12,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   Loader2,
+  Trash2,
+  Eye,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -411,6 +413,36 @@ export default function Applicants() {
                 <Button
                   variant="ghost"
                   size="sm"
+                  className="h-8 gap-1.5 text-red-600 hover:text-red-700 hover:bg-red-50"
+                  onClick={async () => {
+                    if (!confirm(`Delete ${selectedIds.size} applicant(s)?`)) return;
+                    // TODO: wire to delete API
+                    toast.info("Delete not yet implemented");
+                    setSelectedIds(new Set());
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 gap-1.5 text-primary hover:text-primary/80 hover:bg-primary/10"
+                  onClick={() => {
+                    if (selectedIds.size === 1) {
+                      const id = Array.from(selectedIds)[0];
+                      navigate(`/client/users/${id}`);
+                    } else {
+                      toast.info("Select a single applicant to view");
+                    }
+                  }}
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                  View
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
                   className="h-8 gap-1.5 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50"
                   onClick={async () => {
                     for (const id of selectedIds) {
@@ -420,35 +452,7 @@ export default function Applicants() {
                   }}
                 >
                   <CheckCircle2 className="h-3.5 w-3.5" />
-                  Approve
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 gap-1.5 text-amber-700 hover:text-amber-800 hover:bg-amber-50"
-                  onClick={async () => {
-                    for (const id of selectedIds) {
-                      await handleStatusChange(id, "NEEDS_REVIEW");
-                    }
-                    setSelectedIds(new Set());
-                  }}
-                >
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                  Needs Review
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 gap-1.5 text-red-600 hover:text-red-700 hover:bg-red-50"
-                  onClick={async () => {
-                    for (const id of selectedIds) {
-                      await handleStatusChange(id, "REJECTED");
-                    }
-                    setSelectedIds(new Set());
-                  }}
-                >
-                  <XCircle className="h-3.5 w-3.5" />
-                  Reject
+                  Mark as Reviewed
                 </Button>
                 <div className="flex-1" />
                 <Button
@@ -599,8 +603,8 @@ export default function Applicants() {
                                 className="gap-2 cursor-pointer"
                                 onClick={() => navigate(`/client/users/${applicant.id}`)}
                               >
-                                <ArrowUpRight className="h-4 w-4" />
-                                Open applicant
+                                <Eye className="h-4 w-4" />
+                                View applicant
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 className="gap-2 cursor-pointer"
@@ -615,21 +619,19 @@ export default function Applicants() {
                                 onClick={() => handleStatusChange(applicant.id, "APPROVED")}
                               >
                                 <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                                Approve
+                                Mark as Reviewed
                               </DropdownMenuItem>
-                              <DropdownMenuItem
-                                className="gap-2 cursor-pointer"
-                                onClick={() => handleStatusChange(applicant.id, "NEEDS_REVIEW")}
-                              >
-                                <AlertTriangle className="h-4 w-4 text-amber-600" />
-                                Needs Review
-                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 className="gap-2 cursor-pointer text-red-600"
-                                onClick={() => handleStatusChange(applicant.id, "REJECTED")}
+                                onClick={() => {
+                                  if (!confirm(`Delete applicant ${applicant.fullName}?`)) return;
+                                  // TODO: wire to delete API
+                                  toast.info("Delete not yet implemented");
+                                }}
                               >
-                                <XCircle className="h-4 w-4" />
-                                Reject
+                                <Trash2 className="h-4 w-4" />
+                                Delete
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
