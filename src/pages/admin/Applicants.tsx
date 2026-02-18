@@ -312,8 +312,8 @@ export default function Applicants() {
   };
 
   return (
-    <div className="flex gap-0 h-[calc(100vh-80px)]">
-      <div className="flex-1 flex flex-col min-w-0 p-6 overflow-auto">
+    <div className="flex gap-0 min-h-[calc(100vh-80px)]">
+      <div className="flex-1 flex flex-col min-w-0 p-6 overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -467,7 +467,7 @@ export default function Applicants() {
             )}
 
             {/* Table */}
-            <div className="rounded-lg border bg-card overflow-hidden">
+            <div className="rounded-lg border bg-card">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-slate-50/50">
