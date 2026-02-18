@@ -14,6 +14,7 @@ import {
   Loader2,
   CheckCircle,
   AlertTriangle,
+  Building2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,7 @@ interface AdminUser {
   firstName: string;
   lastName: string;
   phone?: string;
+  company?: string;
   profileImage?: string;
   mfa_enabled?: boolean;
   isActive?: boolean;
@@ -66,7 +68,9 @@ export default function AdminProfile() {
   const [saving, setSaving] = useState(false);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [company, setCompany] = useState("");
   const [profileImage, setProfileImage] = useState("");
   const [language, setLanguage] = useState("en");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -88,7 +92,9 @@ export default function AdminProfile() {
       setUser(u);
       setFirstName(u.firstName || "");
       setLastName(u.lastName || "");
+      setEmail(u.email || "");
       setPhone(u.phone || "");
+      setCompany(u.company || "");
       setProfileImage(u.profileImage || "");
     } catch (err) {
       console.error("Failed to load profile:", err);
@@ -104,7 +110,9 @@ export default function AdminProfile() {
       await api.patch("/admin/profile", {
         firstName,
         lastName,
+        email,
         phone,
+        company,
         profileImage,
       });
       toast.success("Profile updated successfully");
@@ -316,20 +324,19 @@ export default function AdminProfile() {
             </div>
           </div>
 
-          {/* Email (read-only) */}
+          {/* Email */}
           <div className="space-y-2">
-            <Label className="text-sm font-medium flex items-center gap-2">
+            <Label htmlFor="email" className="text-sm font-medium flex items-center gap-2">
               <Mail className="h-4 w-4 text-muted-foreground" />
               Email Address
             </Label>
             <Input
-              value={user?.email || ""}
-              disabled
-              className="bg-muted/50"
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="admin@company.com"
             />
-            <p className="text-xs text-muted-foreground">
-              Email cannot be changed. Contact support if needed.
-            </p>
           </div>
 
           {/* Phone */}
@@ -343,6 +350,20 @@ export default function AdminProfile() {
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               placeholder="+1 (868) 000-0000"
+            />
+          </div>
+
+          {/* Company / Organization */}
+          <div className="space-y-2">
+            <Label htmlFor="company" className="text-sm font-medium flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-muted-foreground" />
+              Company / Organization
+            </Label>
+            <Input
+              id="company"
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+              placeholder="Enter company name"
             />
           </div>
 
