@@ -1,10 +1,11 @@
 /**
- * NOBIS Verification Report — PDF Export v3
+ * NOBIS Verification Report — PDF Export v4
  *
- * Changes from v2:
- *   - Logo aspect ratio corrected (2.48:1)
- *   - Image URLs passed in from component (not re-resolved)
- *   - Selfie sourced correctly via same logic as UI
+ * v4 changes:
+ *   - Logo smaller (18×7.3mm)
+ *   - Uses canvas to convert already-loaded <img> elements to base64
+ *     (bypasses CORS fetch issues for selfie and other images)
+ *   - Falls back to fetch() if canvas approach fails
  */
 
 import jsPDF from "jspdf";
@@ -25,12 +26,11 @@ interface ExportParams {
   applicant: any;
   verificationResults: any[];
   clientName?: string;
-  /** Pre-resolved image URLs from the component — guarantees same images as UI */
   images?: {
-    idFront?: string | null;   // clean ID front
-    idBack?: string | null;    // clean ID back
-    selfie?: string | null;    // selfie / liveness capture
-    idPortrait?: string | null; // extracted face from ID
+    idFront?: string | null;
+    idBack?: string | null;
+    selfie?: string | null;
+    idPortrait?: string | null;
   };
 }
 
@@ -41,18 +41,14 @@ function safe(v: any): string {
   if (Array.isArray(v)) return v.map(safe).join(", ");
   return typeof v === "object" ? JSON.stringify(v) : String(v);
 }
-
 function fmtD(d?: string): string {
   if (!d) return "\u2014";
-  try { return new Date(d).toLocaleString("en-GB", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
-  catch { return d; }
+  try { return new Date(d).toLocaleString("en-GB", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" }); } catch { return d; }
 }
-
 function sLabel(s: string): string {
   const m: Record<string,string> = { verified:"APPROVED", approved:"APPROVED", rejected:"REJECTED", pending:"PENDING", needsReview:"NEEDS REVIEW", requested:"PENDING", passed:"PASS", failed:"FAIL" };
   return m[s?.toLowerCase()] || s?.toUpperCase() || "\u2014";
 }
-
 function sColor(s: string): string {
   const v = s?.toLowerCase();
   if (["verified","approved","passed","pass","ok","match","valid","clear","no_match"].includes(v)) return GREEN;
@@ -60,27 +56,82 @@ function sColor(s: string): string {
   if (["pending","needsreview","needs_review","in_progress","review"].includes(v)) return AMBER;
   return GREY;
 }
-
 function rgb(h: string): [number,number,number] {
-  const c = h.replace("#","");
-  return [parseInt(c.slice(0,2),16), parseInt(c.slice(2,4),16), parseInt(c.slice(4,6),16)];
+  const c = h.replace("#",""); return [parseInt(c.slice(0,2),16), parseInt(c.slice(2,4),16), parseInt(c.slice(4,6),16)];
 }
-
 function findR(r: any[], t: string) { return r.find((x: any) => x.verificationType === t) || null; }
 
-async function toB64(url: string): Promise<string | null> {
+/**
+ * Convert an image URL to base64.
+ * Strategy 1: Find an already-loaded <img> on the page with this src and use canvas
+ * Strategy 2: Create a new Image with crossOrigin and draw to canvas
+ * Strategy 3: fetch() as last resort
+ */
+async function imgToB64(url: string): Promise<string | null> {
+  if (!url) return null;
+
+  // Strategy 1: find existing <img> in DOM and draw to canvas
+  try {
+    const imgs = document.querySelectorAll("img");
+    for (const img of imgs) {
+      if (img.src === url && img.naturalWidth > 0 && img.complete) {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          try {
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+            if (dataUrl && dataUrl.length > 100) return dataUrl;
+          } catch { /* tainted canvas, try next strategy */ }
+        }
+      }
+    }
+  } catch { /* continue */ }
+
+  // Strategy 2: load fresh with crossOrigin
+  try {
+    const result = await new Promise<string | null>((resolve) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.drawImage(img, 0, 0);
+            resolve(canvas.toDataURL("image/jpeg", 0.85));
+          } else resolve(null);
+        } catch { resolve(null); }
+      };
+      img.onerror = () => resolve(null);
+      setTimeout(() => resolve(null), 8000);
+      img.src = url;
+    });
+    if (result && result.length > 100) return result;
+  } catch { /* continue */ }
+
+  // Strategy 3: fetch
   try {
     const r = await fetch(url, { mode: "cors" });
     if (!r.ok) return null;
     const b = await r.blob();
-    return new Promise(res => { const rd = new FileReader(); rd.onloadend = () => res(rd.result as string); rd.onerror = () => res(null); rd.readAsDataURL(b); });
+    return new Promise(res => {
+      const rd = new FileReader();
+      rd.onloadend = () => res(rd.result as string);
+      rd.onerror = () => res(null);
+      rd.readAsDataURL(b);
+    });
   } catch { return null; }
 }
 
 export async function exportApplicantPDF({ applicant, verificationResults, clientName = "NOBIS KYC", images }: ExportParams): Promise<void> {
   const doc = new jsPDF("portrait", "mm", "a4");
-  const W = doc.internal.pageSize.getWidth();   // 210
-  const H = doc.internal.pageSize.getHeight();   // 297
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
   const M = 16;
   const CW = W - M * 2;
   let y = 0;
@@ -103,39 +154,34 @@ export async function exportApplicantPDF({ applicant, verificationResults, clien
   const amlR = findR(verificationResults, "sanctionsCheck");
   const riskR = findR(verificationResults, "riskEvaluation");
 
-  // ── Resolve evidence images ──
-  // Use pre-resolved URLs from component if available, otherwise fall back
+  // Resolve image URLs
   const idvUrls: string[] = idvR?.imagesUrls || [];
   const faceUrls: string[] = faceR?.imagesUrls || [];
-
-  const imgSrc = {
+  const src = {
     idFront:    images?.idFront    ?? idvUrls[4] ?? idvUrls[2] ?? null,
     idBack:     images?.idBack     ?? idvUrls[5] ?? idvUrls[3] ?? null,
     selfie:     images?.selfie     ?? faceUrls[0] ?? idvUrls[0] ?? null,
     idPortrait: images?.idPortrait ?? idvUrls[1] ?? (faceUrls.length > 1 ? faceUrls[1] : null),
   };
 
+  // Convert all images to base64 (using canvas strategy to bypass CORS)
   const [idFrontB64, idBackB64, selfieB64, portraitB64] = await Promise.all([
-    imgSrc.idFront ? toB64(imgSrc.idFront) : null,
-    imgSrc.idBack  ? toB64(imgSrc.idBack) : null,
-    imgSrc.selfie  ? toB64(imgSrc.selfie) : null,
-    imgSrc.idPortrait ? toB64(imgSrc.idPortrait) : null,
+    imgToB64(src.idFront!),
+    imgToB64(src.idBack!),
+    imgToB64(src.selfie!),
+    imgToB64(src.idPortrait!),
   ]);
 
   // ═══════════════════════════════════════════════════════
-  // Drawing helpers
-  // ═══════════════════════════════════════════════════════
   const header = () => {
     doc.setFillColor(27, 12, 140);
-    doc.rect(0, 0, W, 14, "F");
-    // Logo — exact 2.48:1 aspect ratio, height 9mm
-    try { doc.addImage(NOBIS_LOGO, "PNG", M, 2.5, 22.3, 9); }
-    catch { doc.setTextColor(255,255,255); doc.setFontSize(11); doc.setFont("helvetica","bold"); doc.text("NOBIS", M, 10); }
-    doc.setTextColor(190,190,220); doc.setFontSize(6.5); doc.setFont("helvetica","normal");
-    doc.text("VERIFICATION REPORT", W - M, 6, { align: "right" });
-    doc.text(new Date().toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" }), W - M, 10, { align: "right" });
+    doc.rect(0, 0, W, 12, "F");
+    try { doc.addImage(NOBIS_LOGO, "PNG", M, 1.8, 18, 7.3); }
+    catch { doc.setTextColor(255,255,255); doc.setFontSize(10); doc.setFont("helvetica","bold"); doc.text("NOBIS", M, 8); }
+    doc.setTextColor(190,190,220); doc.setFontSize(6); doc.setFont("helvetica","normal");
+    doc.text("VERIFICATION REPORT", W - M, 5.5, { align: "right" });
+    doc.text(new Date().toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" }), W - M, 9, { align: "right" });
   };
-
   const footer = (pg: number, tot: number) => {
     doc.setDrawColor(226,232,240); doc.line(M, H - 10, W - M, H - 10);
     doc.setFontSize(6); doc.setTextColor(148,163,184); doc.setFont("helvetica","normal");
@@ -143,31 +189,23 @@ export async function exportApplicantPDF({ applicant, verificationResults, clien
     doc.text(`Page ${pg} of ${tot}`, W - M, H - 6.5, { align: "right" });
     doc.text("Confidential \u2014 Authorized personnel only", M, H - 3.5);
   };
-
-  const ensure = (n: number) => { if (y + n > H - 14) { doc.addPage(); header(); y = 19; } };
-
+  const ensure = (n: number) => { if (y + n > H - 14) { doc.addPage(); header(); y = 17; } };
   const hd = (t: string) => {
     ensure(11);
-    doc.setFillColor(232,230,245);
-    doc.roundedRect(M, y, CW, 7, 1.2, 1.2, "F");
+    doc.setFillColor(232,230,245); doc.roundedRect(M, y, CW, 7, 1.2, 1.2, "F");
     doc.setFontSize(8.5); doc.setFont("helvetica","bold"); doc.setTextColor(27,12,140);
     doc.text(t, M + 3, y + 5); y += 10;
   };
-
   const kv = (k: string, v: string, o?: { c?: string; b?: boolean }) => {
     ensure(5.5);
     doc.setFontSize(7.5); doc.setFont("helvetica","normal"); doc.setTextColor(100,116,139);
     doc.text(k, M + 2, y);
-    doc.setFont("helvetica", o?.b ? "bold" : "normal");
-    doc.setTextColor(...rgb(o?.c || TXT));
-    doc.text(doc.splitTextToSize(safe(v), CW - 50)[0] || "", M + 48, y);
-    y += 5;
+    doc.setFont("helvetica", o?.b ? "bold" : "normal"); doc.setTextColor(...rgb(o?.c || TXT));
+    doc.text(doc.splitTextToSize(safe(v), CW - 50)[0] || "", M + 48, y); y += 5;
   };
-
   const pill = (x: number, yp: number, label: string, color: string) => {
     const pw = doc.getTextWidth(label) + 5;
-    doc.setFillColor(...rgb(color));
-    doc.roundedRect(x, yp - 3, pw, 4.5, 1.2, 1.2, "F");
+    doc.setFillColor(...rgb(color)); doc.roundedRect(x, yp - 3, pw, 4.5, 1.2, 1.2, "F");
     doc.setTextColor(255,255,255); doc.setFontSize(6.5); doc.setFont("helvetica","bold");
     doc.text(label, x + 2.5, yp + 0.5);
   };
@@ -175,18 +213,13 @@ export async function exportApplicantPDF({ applicant, verificationResults, clien
   // ═══════════════════════════════════════════════════════
   // PAGE 1
   // ═══════════════════════════════════════════════════════
-  header(); y = 19;
-
+  header(); y = 17;
   doc.setFontSize(18); doc.setFont("helvetica","bold"); doc.setTextColor(...rgb(TXT));
   doc.text(name, M, y); y += 7;
   doc.setFontSize(8); doc.setFont("helvetica","normal"); doc.setTextColor(...rgb(TXT2));
-  doc.text(`Inspection report \u2014 ${new Date().toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" })}  |  Created for ${clientName}`, M, y);
-  y += 8;
-
+  doc.text(`Inspection report \u2014 ${new Date().toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" })}  |  Created for ${clientName}`, M, y); y += 8;
   doc.setFontSize(8); doc.setFont("helvetica","bold"); doc.setTextColor(...rgb(TXT));
-  doc.text("Verification Status", M, y);
-  pill(M + 34, y, overall, sColor(overall)); y += 8;
-
+  doc.text("Verification Status", M, y); pill(M + 34, y, overall, sColor(overall)); y += 8;
   doc.setDrawColor(...rgb(BRD)); doc.line(M, y, W - M, y); y += 5;
 
   hd("Profile Data");
@@ -212,7 +245,6 @@ export async function exportApplicantPDF({ applicant, verificationResults, clien
     y = (doc as any).lastAutoTable.finalY + 4;
   }
 
-  // Checks
   if (idvR) {
     const raw = idvR.rawResponse || {}; const proc = idvR.processedData || {};
     ensure(12); hd("Document Review Checks");
@@ -232,7 +264,6 @@ export async function exportApplicantPDF({ applicant, verificationResults, clien
     }
   }
 
-  // Doc info
   if (idvR) {
     const proc = idvR.processedData || {}; const raw = idvR.rawResponse || {};
     ensure(12); hd("ID Document Information");
@@ -250,7 +281,6 @@ export async function exportApplicantPDF({ applicant, verificationResults, clien
     }
   }
 
-  // Face
   if (faceR) {
     ensure(12); hd("Face Verification");
     const fp = faceR.processedData || {}; const fr = faceR.rawResponse || {};
@@ -262,14 +292,12 @@ export async function exportApplicantPDF({ applicant, verificationResults, clien
     kv("Checked:", fmtD(faceR.createdAt)); y += 2;
   }
 
-  // Contact
   if (phoneR || emailR) { ensure(10); hd("Contact Verification");
     if (phoneR) { kv("Phone:", sLabel(phoneR.status), { c: sColor(phoneR.status), b: true }); kv("Number:", safe(applicant?.phone)); }
     if (emailR) { kv("Email:", sLabel(emailR.status), { c: sColor(emailR.status), b: true }); kv("Address:", safe(applicant?.email)); }
     y += 2;
   }
 
-  // AML
   if (amlR) { ensure(10); hd("AML / Sanctions");
     const ap = amlR.processedData || {}; const ar = amlR.rawResponse || {};
     kv("Result:", safe(ap.status || ar.status || "CLEAR"), { c: sColor(ap.status || ar.status || "CLEAR"), b: true });
@@ -277,7 +305,6 @@ export async function exportApplicantPDF({ applicant, verificationResults, clien
     y += 2;
   }
 
-  // Risk
   if (riskR) { ensure(10); hd("Risk Assessment");
     const rp = riskR.processedData || {}; const rr = riskR.rawResponse || {};
     const sc = rp.score ?? rp.riskScore ?? rr.totalPoints; if (sc != null) kv("Score:", safe(sc), { b: true });
@@ -285,7 +312,6 @@ export async function exportApplicantPDF({ applicant, verificationResults, clien
     y += 2;
   }
 
-  // PoA
   if (poaR) { ensure(10); hd("Proof of Address");
     const pp = poaR.processedData || {}; const pr = poaR.rawResponse || {};
     kv("Status:", sLabel(poaR.status), { c: sColor(poaR.status), b: true });
@@ -294,7 +320,6 @@ export async function exportApplicantPDF({ applicant, verificationResults, clien
     y += 2;
   }
 
-  // Location
   const ip = applicant?.ip || idvR?.rawResponse?.status?.ipAddress;
   const geo = applicant?.geoLocation;
   if (ip || geo) { ensure(10); hd("Location & IP");
@@ -305,38 +330,26 @@ export async function exportApplicantPDF({ applicant, verificationResults, clien
   }
 
   // ═══════════════════════════════════════════════════════
-  // EVIDENCE: ID Documents side by side
+  // EVIDENCE: ID Documents
   // ═══════════════════════════════════════════════════════
   if (idFrontB64 || idBackB64) {
-    doc.addPage(); header(); y = 19;
+    doc.addPage(); header(); y = 17;
     doc.setFontSize(11); doc.setFont("helvetica","bold"); doc.setTextColor(...rgb(TXT));
     doc.text("Document Evidence", M, y); y += 3;
     doc.setFontSize(6.5); doc.setFont("helvetica","normal"); doc.setTextColor(...rgb(TXT2));
     doc.text(`${name}  \u2014  ${aid}`, M, y); y += 7;
-
-    const cw = (CW - 4) / 2;
-    const ih = cw * 0.65; // slightly taller for passport aspect
-
+    const cw = (CW - 4) / 2; const ih = cw * 0.65;
     doc.setFontSize(7.5); doc.setFont("helvetica","bold"); doc.setTextColor(...rgb(TXT));
     if (idFrontB64) doc.text("ID Document \u2014 Front", M, y);
     if (idBackB64) doc.text("ID Document \u2014 Back", M + cw + 4, y);
     y += 2;
-
-    // Draw border + image
-    if (idFrontB64) {
-      doc.setDrawColor(...rgb(BRD)); doc.rect(M, y, cw, ih);
-      try { doc.addImage(idFrontB64, "JPEG", M + 0.5, y + 0.5, cw - 1, ih - 1); } catch {}
-    }
-    if (idBackB64) {
-      const x2 = M + cw + 4;
-      doc.setDrawColor(...rgb(BRD)); doc.rect(x2, y, cw, ih);
-      try { doc.addImage(idBackB64, "JPEG", x2 + 0.5, y + 0.5, cw - 1, ih - 1); } catch {}
-    }
+    if (idFrontB64) { doc.setDrawColor(...rgb(BRD)); doc.rect(M, y, cw, ih); try { doc.addImage(idFrontB64, "JPEG", M + 0.5, y + 0.5, cw - 1, ih - 1); } catch {} }
+    if (idBackB64) { const x2 = M + cw + 4; doc.setDrawColor(...rgb(BRD)); doc.rect(x2, y, cw, ih); try { doc.addImage(idBackB64, "JPEG", x2 + 0.5, y + 0.5, cw - 1, ih - 1); } catch {} }
     y += ih + 8;
   }
 
   // ═══════════════════════════════════════════════════════
-  // EVIDENCE: Face Match — Selfie vs ID Portrait
+  // EVIDENCE: Face Match
   // ═══════════════════════════════════════════════════════
   if (selfieB64 || portraitB64) {
     ensure(120);
@@ -347,35 +360,21 @@ export async function exportApplicantPDF({ applicant, verificationResults, clien
     const mr = safe(fp.result || fp.matchResult || fr.resultData?.verificationResult || "\u2014");
     const ms = fp.matchScore || fp.score || fp.confidence || fr.resultData?.matchScore;
     doc.text(`Result: ${mr}${ms ? "  |  Confidence: " + ms + "%" : ""}`, M, y); y += 7;
-
-    const cw = (CW - 4) / 2;
-    const ih = cw * 1.25; // portrait aspect
-
+    const cw = (CW - 4) / 2; const ih = cw * 1.25;
     doc.setFontSize(7.5); doc.setFont("helvetica","bold"); doc.setTextColor(...rgb(BLUE));
     if (selfieB64) doc.text("Selfie / Liveness", M, y);
     if (portraitB64) doc.text("ID Portrait (Extracted)", M + cw + 4, y);
     y += 2;
-
-    if (selfieB64) {
-      doc.setDrawColor(...rgb(BRD)); doc.rect(M, y, cw, ih);
-      try { doc.addImage(selfieB64, "JPEG", M + 0.5, y + 0.5, cw - 1, ih - 1); } catch {}
-    }
-    if (portraitB64) {
-      const x2 = M + cw + 4;
-      doc.setDrawColor(...rgb(BRD)); doc.rect(x2, y, cw, ih);
-      try { doc.addImage(portraitB64, "JPEG", x2 + 0.5, y + 0.5, cw - 1, ih - 1); } catch {}
-    }
+    if (selfieB64) { doc.setDrawColor(...rgb(BRD)); doc.rect(M, y, cw, ih); try { doc.addImage(selfieB64, "JPEG", M + 0.5, y + 0.5, cw - 1, ih - 1); } catch {} }
+    if (portraitB64) { const x2 = M + cw + 4; doc.setDrawColor(...rgb(BRD)); doc.rect(x2, y, cw, ih); try { doc.addImage(portraitB64, "JPEG", x2 + 0.5, y + 0.5, cw - 1, ih - 1); } catch {} }
   }
 
-  // Disclaimer
-  doc.addPage(); header(); y = 19;
+  doc.addPage(); header(); y = 17;
   hd("Disclaimer");
   doc.setFontSize(7); doc.setFont("helvetica","normal"); doc.setTextColor(...rgb(TXT2));
   doc.text(doc.splitTextToSize("This report is generated from automated verification processes and is intended for authorized compliance personnel only. It does not constitute legal advice. The user profiles are screened against global databases comprising Politically Exposed Persons (PEPs), their Relatives and Close Associates (RCAs), persons on Sanctions lists and Watchlists, and persons who appeared in Adverse Media. Subjects included in this report do not necessarily pose actual risk. This report is designed to alert you to possible risk and to situations where further scrutiny may be appropriate.", CW - 4), M + 2, y);
 
-  // Footers
   const t = doc.getNumberOfPages();
   for (let i = 1; i <= t; i++) { doc.setPage(i); footer(i, t); }
-
   doc.save(`NOBIS-Verification-Report-${name.replace(/[^a-zA-Z0-9]/g,"-").replace(/-+/g,"-")}.pdf`);
 }
