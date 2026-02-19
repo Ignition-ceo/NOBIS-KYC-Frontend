@@ -87,7 +87,7 @@ export default function AdminProfile() {
   const loadProfile = async () => {
     try {
       setLoading(true);
-      const res = await api.get("/admin/profile");
+      const res = await api.get("/clients/profile");
       const u = res.data.user;
       setUser(u);
       setFirstName(u.firstName || "");
@@ -107,7 +107,7 @@ export default function AdminProfile() {
   const handleSaveProfile = async () => {
     try {
       setSaving(true);
-      await api.patch("/admin/profile", {
+      await api.patch("/clients/profile", {
         firstName,
         lastName,
         email,
@@ -140,7 +140,7 @@ export default function AdminProfile() {
     }
     try {
       setSaving(true);
-      await api.patch("/admin/profile", {
+      await api.patch("/clients/profile", {
         password: newPassword,
       });
       toast.success("Password changed successfully");
@@ -175,7 +175,7 @@ export default function AdminProfile() {
       const base64 = reader.result as string;
       setProfileImage(base64);
       try {
-        await api.patch("/admin/profile", { profileImage: base64 });
+        await api.patch("/clients/profile", { profileImage: base64 });
         toast.success("Profile image updated");
         loadProfile();
       } catch {
