@@ -87,9 +87,11 @@ function getActorDisplay(actor: any) {
   const id = actor.id || "";
 
   if (type === "admin") {
-    const email = id;
-    const name = email.split("@")[0]?.replace(/[._-]/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) || "Admin";
-    return { initials: name.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase(), label: name, sublabel: email, color: "bg-blue-600" };
+    const email = actor.name || actor.id || "";
+    const name = email.includes("@") 
+      ? email.split("@")[0]?.replace(/[._-]/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) || "Admin"
+      : email || "Admin";
+    return { initials: name.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase(), label: name, sublabel: email.includes("@") ? email : "", color: "bg-blue-600" };
   }
   if (type === "system") {
     return { initials: "SYS", label: "System", sublabel: "", color: "bg-slate-500" };
