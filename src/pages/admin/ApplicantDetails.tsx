@@ -313,27 +313,46 @@ export default function ApplicantDetails() {
     const urls: string[] = idvResult?.imagesUrls || [];
     if (urls.length === 0) return [];
 
-    // Build raw images with backend-assigned or index-based labels
-    const raw = urls.map((url: string, idx: number) => ({
-      url,
-      label: idx === 0 ? "ID Doc Front" : idx === 1 ? "ID Doc Back" : idx === 2 ? "ID Portrait (Cropped)" : `Image ${idx + 1}`,
-    }));
+    // IDMission returns 6 images in this order:
+    //   [0] Selfie capture — NOT an ID image, belongs in Face Verification only
+    //   [1] Ghost image (extracted face / signature / MRZ zone from ID)
+    //   [2] Processed ID front (with overlay/watermark)
+    //   [3] Processed ID back (with overlay/watermark)
+    //   [4] Unedited clean ID front
+    //   [5] Unedited clean ID back
+    //
+    // Display order (excluding selfie):
+    //   1. ID Doc Front (clean) — index 4
+    //   2. ID Doc Back (clean) — index 5
+    //   3. ID Front (Processed) — index 2
+    //   4. ID Back (Processed) — index 3
+    //   5. Extracted Face / Ghost — index 1
 
-    // If there are exactly 6 images (as seen in the Schonelle Khan case):
-    // indices 0-1 = selfie/portrait crops, 2-3 = ID front/back full, 4-5 = ID front/back high-res
-    // Reorder to show: Front, Back, Cropped Portrait, then extras
-    if (urls.length >= 4) {
-      // Heuristic: the cropped portrait is typically a face crop (smaller/square aspect)
-      // ID front/back are typically at indices 2+ in the IDMission response
-      // We label them all and let the grid show them in order
-      const labels = ["ID Doc Front", "ID Doc Back", "ID Portrait (Cropped)", "Image 4", "Image 5", "Image 6", "Image 7", "Image 8"];
-      return urls.map((url: string, idx: number) => ({
-        url,
-        label: labels[idx] || `Image ${idx + 1}`,
-      }));
+    if (urls.length >= 6) {
+      return [
+        { url: urls[4], label: "ID Doc Front" },
+        { url: urls[5], label: "ID Doc Back" },
+        { url: urls[2], label: "ID Front (Processed)" },
+        { url: urls[3], label: "ID Back (Processed)" },
+        { url: urls[1], label: "Extracted Face" },
+      ];
     }
 
-    return raw;
+    // For 3-5 images: exclude index 0 (selfie) if we can identify it
+    if (urls.length >= 3) {
+      // Skip index 0 (selfie), show the rest
+      return urls.slice(1).map((url: string, idx: number) => {
+        const labels = ["Extracted Face", "ID Doc Front", "ID Doc Back", "Image 4", "Image 5"];
+        return { url, label: labels[idx] || `Image ${idx + 2}` };
+      });
+    }
+
+    // Fallback for 1-2 images
+    const fallbackLabels = ["ID Doc Front", "ID Doc Back"];
+    return urls.map((url: string, idx: number) => ({
+      url,
+      label: fallbackLabels[idx] || `Image ${idx + 1}`,
+    }));
   })();
 
   // IP Address from IDMission response
@@ -350,10 +369,12 @@ export default function ApplicantDetails() {
   // For face match ID portrait: prefer the cropped portrait from IDV images (index 2 in IDMission)
   // If faceResult has its own images, use index 1 as fallback
   // The key fix: avoid using the ghost/watermark image from the full ID scan
+  // For face match ID portrait: use the extracted face from IDMission (index 1)
+  // This is the ghost image / cropped face which is the closest to a portrait crop
   const idPortraitImage = (() => {
-    // Best option: cropped portrait from IDV (typically index 2 in IDMission)
     const idvUrls = idvResult?.imagesUrls || [];
-    if (idvUrls.length > 2) return idvUrls[2]; // IDMission: index 2 = cropped face from ID
+    // IDMission index 1 = extracted face / ghost image
+    if (idvUrls.length >= 2) return idvUrls[1];
 
     // Fallback: face result's second image
     if (faceResult?.imagesUrls?.[1]) return faceResult.imagesUrls[1];
