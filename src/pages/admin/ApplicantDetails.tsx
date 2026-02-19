@@ -52,6 +52,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { exportApplicantPDF } from "@/lib/exportApplicantPDF";
 
 // ── Types ──────────────────────────────────────────────────────────────
 type StepState = "passed" | "pending" | "failed" | "na";
@@ -489,7 +490,18 @@ export default function ApplicantDetails() {
             </div>
 
             <div className="flex items-center gap-2 flex-shrink-0">
-              <Button variant="outline" className="h-10 gap-2 rounded-xl whitespace-nowrap">
+              <Button
+                variant="outline"
+                className="h-10 gap-2 rounded-xl whitespace-nowrap"
+                onClick={() => {
+                  exportApplicantPDF({
+                    applicant,
+                    verificationResults,
+                    clientName: safeStr(applicant?.flowId?.clientId?.name || applicant?.flowId?.clientId?.companyName || "NOBIS KYC"),
+                  });
+                  toast.success("PDF report downloaded");
+                }}
+              >
                 <Download className="h-4 w-4" />
                 <span className="hidden sm:inline">Export as PDF</span>
               </Button>
