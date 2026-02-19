@@ -494,12 +494,19 @@ export default function ApplicantDetails() {
                 variant="outline"
                 className="h-10 gap-2 rounded-xl whitespace-nowrap"
                 onClick={() => {
+                  const idvUrls = idvResult?.imagesUrls || [];
                   exportApplicantPDF({
                     applicant,
                     verificationResults,
                     clientName: safeStr(applicant?.flowId?.clientId?.name || applicant?.flowId?.clientId?.companyName || "NOBIS KYC"),
+                    images: {
+                      idFront: idvUrls[4] || idvUrls[2] || null,
+                      idBack: idvUrls[5] || idvUrls[3] || null,
+                      selfie: selfieImage || selfieUrl || idvUrls[0] || null,
+                      idPortrait: idPortraitImage || (idvUrls.length >= 2 ? idvUrls[1] : null),
+                    },
                   });
-                  toast.success("PDF report downloaded");
+                  toast.success("PDF report downloading...");
                 }}
               >
                 <Download className="h-4 w-4" />
