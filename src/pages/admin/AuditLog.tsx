@@ -85,13 +85,13 @@ function getActorDisplay(actor: any) {
   if (!actor) return { initials: "?", label: "Unknown", sublabel: "" };
   const type = actor.type?.toLowerCase() || "";
   const id = actor.id || "";
+  const name = actor.name || "";
 
-  if (type === "admin") {
-    const email = actor.name || actor.id || "";
-    const name = email.includes("@") 
-      ? email.split("@")[0]?.replace(/[._-]/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) || "Admin"
-      : email || "Admin";
-    return { initials: name.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase(), label: name, sublabel: email.includes("@") ? email : "", color: "bg-blue-600" };
+  if (type === "admin" || type === "client") {
+    const displayName = name || (id.includes("@") ? id.split("@")[0]?.replace(/[._-]/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) : id);
+    const email = name.includes("@") ? name : (actor.metadata?.adminEmail || "");
+    const initials = displayName.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase() || "U";
+    return { initials, label: displayName, sublabel: email || id, color: "bg-blue-600" };
   }
   if (type === "system") {
     return { initials: "SYS", label: "System", sublabel: "", color: "bg-slate-500" };
