@@ -1,7 +1,7 @@
 /**
- * NOBIS Verification Report — PDF Export v5
+ * NOBIS Verification Report — PDF Export v6
  *
- * v5: crossOrigin canvas fix, API proxy fallback, enterprise spacing
+ * v6: Backend proxy for images (no CORS issues), enterprise spacing
  */
 
 import jsPDF from "jspdf";
@@ -59,64 +59,29 @@ function rgb(h: string): [number,number,number] {
 function findR(r: any[], t: string) { return r.find((x: any) => x.verificationType === t) || null; }
 
 /**
- * Convert image URL to base64 with multiple strategies:
- * 1. Find already-loaded <img> with crossOrigin in DOM → canvas
- * 2. Load new Image with crossOrigin → canvas
- * 3. Fetch via backend API proxy (authenticated, no CORS)
- * 4. Direct fetch as last resort
+ * Fetch image as base64 via backend proxy (avoids all CORS issues).
+ * Falls back to direct fetch if proxy unavailable.
  */
-async function imgToB64(url: string): Promise<string | null> {
+async function imgToB64(url: string | null | undefined): Promise<string | null> {
   if (!url) return null;
 
-  // Strategy 1: existing DOM <img> with crossOrigin (canvas should work)
+  // Strategy 1: Backend proxy (server-to-server, no CORS)
   try {
-    const imgs = document.querySelectorAll<HTMLImageElement>("img[crossorigin]");
-    for (const img of imgs) {
-      if (img.src === url && img.naturalWidth > 0 && img.complete) {
-        const c = document.createElement("canvas");
-        c.width = img.naturalWidth; c.height = img.naturalHeight;
-        const ctx = c.getContext("2d");
-        if (ctx) { ctx.drawImage(img, 0, 0); const d = c.toDataURL("image/jpeg", 0.85); if (d.length > 200) return d; }
-      }
-    }
+    const res = await api.get("/proxy/image", { params: { url }, timeout: 15000 });
+    if (res.data?.dataUrl) return res.data.dataUrl;
   } catch {}
 
-  // Strategy 2: fresh Image with crossOrigin
-  try {
-    const r = await new Promise<string | null>((res) => {
-      const img = new Image(); img.crossOrigin = "anonymous";
-      img.onload = () => { try { const c = document.createElement("canvas"); c.width = img.naturalWidth; c.height = img.naturalHeight; const ctx = c.getContext("2d"); if (ctx) { ctx.drawImage(img, 0, 0); res(c.toDataURL("image/jpeg", 0.85)); } else res(null); } catch { res(null); } };
-      img.onerror = () => res(null);
-      setTimeout(() => res(null), 6000);
-      img.src = url;
-    });
-    if (r && r.length > 200) return r;
-  } catch {}
-
-  // Strategy 3: fetch via backend API proxy
-  try {
-    const proxyRes = await api.get("/proxy/image", {
-      params: { url },
-      responseType: "blob",
-      timeout: 10000,
-    });
-    if (proxyRes.data) {
-      const blob = proxyRes.data as Blob;
-      return new Promise(res => {
-        const rd = new FileReader();
-        rd.onloadend = () => res(rd.result as string);
-        rd.onerror = () => res(null);
-        rd.readAsDataURL(blob);
-      });
-    }
-  } catch {}
-
-  // Strategy 4: direct fetch
+  // Strategy 2: Direct fetch (works if image server allows CORS)
   try {
     const r = await fetch(url, { mode: "cors" });
     if (r.ok) {
       const b = await r.blob();
-      return new Promise(res => { const rd = new FileReader(); rd.onloadend = () => res(rd.result as string); rd.onerror = () => res(null); rd.readAsDataURL(b); });
+      return new Promise(res => {
+        const rd = new FileReader();
+        rd.onloadend = () => res(rd.result as string);
+        rd.onerror = () => res(null);
+        rd.readAsDataURL(b);
+      });
     }
   } catch {}
 
@@ -158,9 +123,9 @@ export async function exportApplicantPDF({ applicant, verificationResults, clien
     idPortrait: images?.idPortrait ?? idvUrls[1] ?? (faceUrls.length > 1 ? faceUrls[1] : null),
   };
 
-  // Fetch all images in parallel
+  // Fetch all images via backend proxy
   const [idFrontB64, idBackB64, selfieB64, portraitB64] = await Promise.all([
-    imgToB64(src.idFront!), imgToB64(src.idBack!), imgToB64(src.selfie!), imgToB64(src.idPortrait!),
+    imgToB64(src.idFront), imgToB64(src.idBack), imgToB64(src.selfie), imgToB64(src.idPortrait),
   ]);
 
   // ═══════════════════════════════════════════════════════
@@ -205,15 +170,15 @@ export async function exportApplicantPDF({ applicant, verificationResults, clien
     doc.setTextColor(255,255,255); doc.setFontSize(7); doc.setFont("helvetica","bold");
     doc.text(label, x + 3, yp + 0.5);
   };
-  const divider = () => { sp(3); doc.setDrawColor(...rgb(BRD)); doc.line(M, y, W - M, y); sp(3); };
+  const divider = () => { sp(4); doc.setDrawColor(...rgb(BRD)); doc.line(M, y, W - M, y); sp(4); };
 
   // ═══════════════════════════════════════════════════════
   // PAGE 1: COVER
   // ═══════════════════════════════════════════════════════
-  header(); y = 22;
+  header(); y = 24;
 
-  doc.setFontSize(20); doc.setFont("helvetica","bold"); doc.setTextColor(...rgb(TXT));
-  doc.text(name, M, y); sp(10);
+  doc.setFontSize(22); doc.setFont("helvetica","bold"); doc.setTextColor(...rgb(TXT));
+  doc.text(name, M, y); sp(12);
 
   doc.setFontSize(9); doc.setFont("helvetica","normal"); doc.setTextColor(...rgb(TXT2));
   doc.text(`Inspection report \u2014 ${new Date().toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" })}`, M, y); sp(5);
@@ -221,9 +186,9 @@ export async function exportApplicantPDF({ applicant, verificationResults, clien
 
   doc.setFontSize(9); doc.setFont("helvetica","bold"); doc.setTextColor(...rgb(TXT));
   doc.text("Verification Status", M, y);
-  pill(M + 38, y, overall, sColor(overall)); sp(6);
+  pill(M + 38, y, overall, sColor(overall)); sp(8);
 
-  divider(); sp(2);
+  divider();
 
   // ── Profile ──
   hd("Profile Data");
@@ -231,7 +196,6 @@ export async function exportApplicantPDF({ applicant, verificationResults, clien
   kv("Created:", created);
   const flow = applicant?.flowId?.name || (typeof applicant?.flowId === "string" ? applicant.flowId : "\u2014");
   kv("Flow:", safe(flow));
-  sp(4);
 
   // ── Steps ──
   hd("Verification Steps");
@@ -242,8 +206,8 @@ export async function exportApplicantPDF({ applicant, verificationResults, clien
       head: [["Step", "Status"]],
       body: steps.map((s: any) => [({ phone:"Phone", email:"Email", idDocument:"ID Document", selfie:"Selfie / Face", proofOfAddress:"Proof of Address" } as any)[s.verificationType] || s.verificationType, sLabel(s.status)]),
       theme: "grid",
-      headStyles: { fillColor: [27,12,140], textColor: 255, fontSize: 8, font: "helvetica", fontStyle: "bold", cellPadding: 2 },
-      bodyStyles: { fontSize: 8, textColor: [30,41,59], font: "helvetica", cellPadding: 2 },
+      headStyles: { fillColor: [27,12,140], textColor: 255, fontSize: 8, font: "helvetica", fontStyle: "bold", cellPadding: 2.5 },
+      bodyStyles: { fontSize: 8, textColor: [30,41,59], font: "helvetica", cellPadding: 2.5 },
       columnStyles: { 1: { cellWidth: 32, halign: "center" } },
       alternateRowStyles: { fillColor: [248,250,252] },
       didParseCell: (d: any) => { if (d.section === "body" && d.column.index === 1) { d.cell.styles.textColor = rgb(sColor(d.cell.raw as string)); d.cell.styles.fontStyle = "bold"; } },
@@ -261,8 +225,8 @@ export async function exportApplicantPDF({ applicant, verificationResults, clien
     if (chks.length) {
       autoTable(doc, {
         startY: y, margin: { left: M + 2, right: M + 2 }, head: [["Check","Result"]], body: chks, theme: "grid",
-        headStyles: { fillColor: [27,12,140], textColor: 255, fontSize: 7.5, font: "helvetica", fontStyle: "bold", cellPadding: 1.5 },
-        bodyStyles: { fontSize: 7.5, textColor: [30,41,59], font: "helvetica", cellPadding: 1.5 },
+        headStyles: { fillColor: [27,12,140], textColor: 255, fontSize: 7.5, font: "helvetica", fontStyle: "bold", cellPadding: 1.8 },
+        bodyStyles: { fontSize: 7.5, textColor: [30,41,59], font: "helvetica", cellPadding: 1.8 },
         columnStyles: { 1: { cellWidth: 28, halign: "center" } },
         alternateRowStyles: { fillColor: [248,250,252] },
         didParseCell: (d: any) => { if (d.section === "body" && d.column.index === 1) { const v = (d.cell.raw as string)?.toLowerCase(); if (v === "ok" || v === "pass") d.cell.styles.textColor = rgb(GREEN); else if (v === "fail" || v?.includes("suspect") || v?.includes("tamper")) d.cell.styles.textColor = rgb(RED); d.cell.styles.fontStyle = "bold"; } },
@@ -280,7 +244,7 @@ export async function exportApplicantPDF({ applicant, verificationResults, clien
     else { const d = raw.responseCustomerData?.extractedIdData || {}; ["idType","idNumber","idCountry","idDateOfBirth","idExpirationDate","nationality"].forEach(k => { if (d[k]) info.push([k.replace(/^id/,"ID ").replace(/([A-Z])/g," $1").trim(), d[k]]); }); }
     if (info.length) {
       autoTable(doc, { startY: y, margin: { left: M + 2, right: M + 2 }, body: info, theme: "plain",
-        bodyStyles: { fontSize: 8, textColor: [30,41,59], font: "helvetica", cellPadding: 1.5 },
+        bodyStyles: { fontSize: 8, textColor: [30,41,59], font: "helvetica", cellPadding: 1.8 },
         columnStyles: { 0: { cellWidth: 48, textColor: rgb(TXT2) }, 1: { fontStyle: "bold" } },
         alternateRowStyles: { fillColor: [248,250,252] },
       });
@@ -296,14 +260,13 @@ export async function exportApplicantPDF({ applicant, verificationResults, clien
     if (mr) kv("Match:", safe(mr), { c: sColor(mr), b: true });
     const ms = fp.matchScore || fp.score || fp.confidence || fr.resultData?.matchScore; if (ms) kv("Confidence:", ms + "%");
     const lr = fp.livenessResult || fp.liveness?.result || fr.resultData?.livenessResult; if (lr) kv("Liveness:", safe(lr), { c: sColor(lr), b: true });
-    kv("Checked:", fmtD(faceR.createdAt)); sp(4);
+    kv("Checked:", fmtD(faceR.createdAt));
   }
 
   // ── Contact ──
   if (phoneR || emailR) { hd("Contact Verification");
-    if (phoneR) { kv("Phone:", sLabel(phoneR.status), { c: sColor(phoneR.status), b: true }); kv("Number:", safe(applicant?.phone)); sp(2); }
-    if (emailR) { kv("Email:", sLabel(emailR.status), { c: sColor(emailR.status), b: true }); kv("Address:", safe(applicant?.email)); sp(2); }
-    sp(2);
+    if (phoneR) { kv("Phone:", sLabel(phoneR.status), { c: sColor(phoneR.status), b: true }); kv("Number:", safe(applicant?.phone)); }
+    if (emailR) { kv("Email:", sLabel(emailR.status), { c: sColor(emailR.status), b: true }); kv("Address:", safe(applicant?.email)); }
   }
 
   // ── AML ──
@@ -311,7 +274,6 @@ export async function exportApplicantPDF({ applicant, verificationResults, clien
     const ap = amlR.processedData || {}; const ar = amlR.rawResponse || {};
     kv("Result:", safe(ap.status || ar.status || "CLEAR"), { c: sColor(ap.status || ar.status || "CLEAR"), b: true });
     kv("Match:", safe(ap.matchStatus || ar.matchStatus || "NO_MATCH"), { c: (ap.matchStatus || ar.matchStatus || "NO_MATCH") === "NO_MATCH" ? GREEN : RED, b: true });
-    sp(4);
   }
 
   // ── Risk ──
@@ -319,7 +281,6 @@ export async function exportApplicantPDF({ applicant, verificationResults, clien
     const rp = riskR.processedData || {}; const rr = riskR.rawResponse || {};
     const sc = rp.score ?? rp.riskScore ?? rr.totalPoints; if (sc != null) kv("Score:", safe(sc), { b: true });
     const lv = rp.level || rp.riskLevel || rr.classification; if (lv) kv("Level:", safe(lv), { c: sColor(lv), b: true });
-    sp(4);
   }
 
   // ── Location ──
@@ -330,71 +291,66 @@ export async function exportApplicantPDF({ applicant, verificationResults, clien
     if (geo?.country) kv("Country:", safe(geo.country));
     if (geo?.city) kv("City:", safe(geo.city));
     if (geo?.latitude && geo?.longitude) kv("Coords:", `${geo.latitude}, ${geo.longitude}`);
-    sp(4);
   }
 
   // ═══════════════════════════════════════════════════════
-  // EVIDENCE PAGE: ID Documents
+  // EVIDENCE: ID Documents (side by side)
   // ═══════════════════════════════════════════════════════
   if (idFrontB64 || idBackB64) {
-    doc.addPage(); header(); y = 22;
+    doc.addPage(); header(); y = 24;
 
-    doc.setFontSize(13); doc.setFont("helvetica","bold"); doc.setTextColor(...rgb(TXT));
-    doc.text("Document Evidence", M, y); sp(5);
-    doc.setFontSize(7); doc.setFont("helvetica","normal"); doc.setTextColor(...rgb(TXT2));
-    doc.text(`${name}  \u2014  ${aid}`, M, y); sp(10);
+    doc.setFontSize(14); doc.setFont("helvetica","bold"); doc.setTextColor(...rgb(TXT));
+    doc.text("Document Evidence", M, y); sp(6);
+    doc.setFontSize(7.5); doc.setFont("helvetica","normal"); doc.setTextColor(...rgb(TXT2));
+    doc.text(`${name}  \u2014  ${aid}`, M, y); sp(12);
 
-    const cw = (CW - 6) / 2;
+    const cw = (CW - 8) / 2;
     const ih = cw * 0.63;
 
-    // Labels
-    doc.setFontSize(8); doc.setFont("helvetica","bold"); doc.setTextColor(...rgb(TXT));
+    doc.setFontSize(8.5); doc.setFont("helvetica","bold"); doc.setTextColor(...rgb(TXT));
     if (idFrontB64) doc.text("ID Document \u2014 Front", M, y);
-    if (idBackB64) doc.text("ID Document \u2014 Back", M + cw + 6, y);
-    sp(4);
+    if (idBackB64) doc.text("ID Document \u2014 Back", M + cw + 8, y);
+    sp(5);
 
     if (idFrontB64) { doc.setDrawColor(...rgb(BRD)); doc.setLineWidth(0.3); doc.rect(M, y, cw, ih); try { doc.addImage(idFrontB64, "JPEG", M + 0.5, y + 0.5, cw - 1, ih - 1); } catch {} }
-    if (idBackB64) { const x2 = M + cw + 6; doc.setDrawColor(...rgb(BRD)); doc.setLineWidth(0.3); doc.rect(x2, y, cw, ih); try { doc.addImage(idBackB64, "JPEG", x2 + 0.5, y + 0.5, cw - 1, ih - 1); } catch {} }
-    y += ih;
-    sp(14);
+    if (idBackB64) { const x2 = M + cw + 8; doc.setDrawColor(...rgb(BRD)); doc.setLineWidth(0.3); doc.rect(x2, y, cw, ih); try { doc.addImage(idBackB64, "JPEG", x2 + 0.5, y + 0.5, cw - 1, ih - 1); } catch {} }
+    y += ih; sp(16);
   }
 
   // ═══════════════════════════════════════════════════════
-  // EVIDENCE PAGE: Face Match
+  // EVIDENCE: Face Match (side by side)
   // ═══════════════════════════════════════════════════════
   if (selfieB64 || portraitB64) {
-    ensure(140);
+    ensure(150);
+    divider(); sp(2);
 
-    divider(); sp(4);
+    doc.setFontSize(14); doc.setFont("helvetica","bold"); doc.setTextColor(...rgb(TXT));
+    doc.text("Face Match Evidence", M, y); sp(6);
 
-    doc.setFontSize(13); doc.setFont("helvetica","bold"); doc.setTextColor(...rgb(TXT));
-    doc.text("Face Match Evidence", M, y); sp(5);
-
-    doc.setFontSize(7); doc.setFont("helvetica","normal"); doc.setTextColor(...rgb(TXT2));
+    doc.setFontSize(7.5); doc.setFont("helvetica","normal"); doc.setTextColor(...rgb(TXT2));
     const fp = faceR?.processedData || {}; const fr = faceR?.rawResponse || {};
     const mr = safe(fp.result || fp.matchResult || fr.resultData?.verificationResult || "\u2014");
     const ms = fp.matchScore || fp.score || fp.confidence || fr.resultData?.matchScore;
-    doc.text(`Result: ${mr}${ms ? "  |  Confidence: " + ms + "%" : ""}`, M, y); sp(10);
+    doc.text(`Result: ${mr}${ms ? "  |  Confidence: " + ms + "%" : ""}`, M, y); sp(12);
 
-    const cw = (CW - 6) / 2;
+    const cw = (CW - 8) / 2;
     const ih = cw * 1.2;
 
-    doc.setFontSize(8); doc.setFont("helvetica","bold"); doc.setTextColor(...rgb(BLUE));
+    doc.setFontSize(8.5); doc.setFont("helvetica","bold"); doc.setTextColor(...rgb(BLUE));
     if (selfieB64) doc.text("Selfie / Liveness Capture", M, y);
-    if (portraitB64) doc.text("ID Portrait (Extracted)", M + cw + 6, y);
-    sp(4);
+    if (portraitB64) doc.text("ID Portrait (Extracted)", M + cw + 8, y);
+    sp(5);
 
     if (selfieB64) { doc.setDrawColor(...rgb(BRD)); doc.setLineWidth(0.3); doc.rect(M, y, cw, ih); try { doc.addImage(selfieB64, "JPEG", M + 0.5, y + 0.5, cw - 1, ih - 1); } catch {} }
-    if (portraitB64) { const x2 = M + cw + 6; doc.setDrawColor(...rgb(BRD)); doc.setLineWidth(0.3); doc.rect(x2, y, cw, ih); try { doc.addImage(portraitB64, "JPEG", x2 + 0.5, y + 0.5, cw - 1, ih - 1); } catch {} }
+    if (portraitB64) { const x2 = M + cw + 8; doc.setDrawColor(...rgb(BRD)); doc.setLineWidth(0.3); doc.rect(x2, y, cw, ih); try { doc.addImage(portraitB64, "JPEG", x2 + 0.5, y + 0.5, cw - 1, ih - 1); } catch {} }
   }
 
   // ── Disclaimer ──
-  doc.addPage(); header(); y = 22; sp(4);
+  doc.addPage(); header(); y = 24;
   hd("Disclaimer");
   doc.setFontSize(7.5); doc.setFont("helvetica","normal"); doc.setTextColor(...rgb(TXT2));
   doc.text(doc.splitTextToSize("This report is generated from automated verification processes and is intended for authorized compliance personnel only. It does not constitute legal advice. The user profiles are screened against global databases comprising Politically Exposed Persons (PEPs), their Relatives and Close Associates (RCAs), persons on Sanctions lists and Watchlists, and persons who appeared in Adverse Media. Subjects included in this report do not necessarily pose actual risk. This report is designed to alert you to possible risk and to situations where further scrutiny may be appropriate.", CW - 6), M + 3, y);
 
-  // Footers
   const t = doc.getNumberOfPages();
   for (let i = 1; i <= t; i++) { doc.setPage(i); footer(i, t); }
   doc.save(`NOBIS-Verification-Report-${name.replace(/[^a-zA-Z0-9]/g,"-").replace(/-+/g,"-")}.pdf`);
