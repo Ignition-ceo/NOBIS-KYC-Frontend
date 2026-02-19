@@ -461,7 +461,7 @@ export default function ApplicantDetails() {
               </Button>
               <div className="flex items-center gap-4 min-w-0">
                 <Avatar className="h-14 w-14 border-2 border-primary/20 shadow-md flex-shrink-0">
-                  <AvatarImage src={selfieUrl || undefined} alt={fullName} />
+                  <AvatarImage src={selfieUrl || undefined} alt={fullName} crossOrigin="anonymous" />
                   <AvatarFallback className="text-lg font-bold bg-primary/10 text-primary">{initials}</AvatarFallback>
                 </Avatar>
                 <div className="space-y-1 min-w-0">
@@ -797,7 +797,7 @@ export default function ApplicantDetails() {
                           {idvImages.map((img: any, idx: number) => (
                             <div key={idx} className="space-y-2 cursor-pointer" onClick={() => setImageModalUrl(img.url)}>
                               <div className="aspect-[4/3] rounded-xl overflow-hidden border border-border bg-muted">
-                                <img src={img.url} alt={img.label} className="w-full h-full object-cover" />
+                                <img src={img.url} alt={img.label} crossOrigin="anonymous" className="w-full h-full object-cover" />
                               </div>
                               <p className="text-xs text-center text-muted-foreground font-medium">{img.label}</p>
                             </div>
@@ -840,7 +840,7 @@ export default function ApplicantDetails() {
                               {faceLivenessResult && <Badge className={faceLivenessResult === "Pass" || faceLivenessResult === "passed" ? "bg-emerald-100 text-emerald-700 border border-emerald-300" : "bg-red-100 text-red-700 border border-red-300"}>{faceLivenessResult}</Badge>}
                             </div>
                             <div className="aspect-square rounded-xl overflow-hidden border border-border bg-muted cursor-pointer" onClick={() => setImageModalUrl(selfieImage)}>
-                              <img src={selfieImage} alt="Selfie" className="w-full h-full object-cover" />
+                              <img src={selfieImage} alt="Selfie" crossOrigin="anonymous" className="w-full h-full object-cover" />
                             </div>
                           </div>
                         )}
@@ -848,7 +848,7 @@ export default function ApplicantDetails() {
                           <div className="space-y-2">
                             <Badge className="bg-emerald-600 text-white">ID Portrait</Badge>
                             <div className="aspect-square rounded-xl overflow-hidden border border-border bg-muted cursor-pointer" onClick={() => setImageModalUrl(idPortraitImage)}>
-                              <img src={idPortraitImage} alt="ID Photo" className="w-full h-full object-cover" />
+                              <img src={idPortraitImage} alt="ID Photo" crossOrigin="anonymous" className="w-full h-full object-cover" />
                             </div>
                           </div>
                         )}
@@ -1146,7 +1146,7 @@ export default function ApplicantDetails() {
       {/* Image Modal */}
       <Dialog open={!!imageModalUrl} onOpenChange={() => setImageModalUrl(null)}>
         <DialogContent className="max-w-3xl p-2">
-          {imageModalUrl && <img src={imageModalUrl} alt="Verification image" className="w-full rounded-lg" />}
+          {imageModalUrl && <img src={imageModalUrl} alt="Verification image" crossOrigin="anonymous" className="w-full rounded-lg" />}
         </DialogContent>
       </Dialog>
 
@@ -1157,7 +1157,7 @@ export default function ApplicantDetails() {
             <DialogTitle className="text-base font-semibold">View PoA Document</DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-auto p-4">
-            {poaImages[0] && <img src={poaImages[0]} alt="PoA Document" className="w-full rounded-xl" style={{ maxHeight: "72vh", objectFit: "contain" }} />}
+            {poaImages[0] && <img src={poaImages[0]} alt="PoA Document" crossOrigin="anonymous" className="w-full rounded-xl" style={{ maxHeight: "72vh", objectFit: "contain" }} />}
           </div>
         </DialogContent>
       </Dialog>
