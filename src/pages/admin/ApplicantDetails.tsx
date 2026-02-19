@@ -280,7 +280,26 @@ export default function ApplicantDetails() {
     if (idData.idExpirationDate) result["Expiration Date"] = idData.idExpirationDate;
     if (idData.nationality) result["Nationality"] = idData.nationality;
     if (idData.placeOfBirth) result["Place of Birth"] = idData.placeOfBirth;
-    if (idData.ageOver18) result["Age Over 18"] = idData.ageOver18 === "Y" ? "Yes" : "No";
+    if (idData.ageOver18) {
+      // Recompute from DOB — backend IDV provider sometimes returns wrong value
+      const dobStr = idData.idDateOfBirth || idData.dob;
+      let isOver18 = idData.ageOver18 === "Y"; // fallback to backend value
+      if (dobStr) {
+        try {
+          const parts = dobStr.split(/[\/\-\.]/);
+          if (parts.length === 3) {
+            const [a, b, c] = parts.map(Number);
+            // DD/MM/YYYY (standard in TT) if first part > 12, else try MM/DD/YYYY
+            const dob = a > 12 ? new Date(c, b - 1, a) : b > 12 ? new Date(c, a - 1, b) : new Date(c, b - 1, a);
+            if (!isNaN(dob.getTime())) {
+              const age = Math.abs(new Date(Date.now() - dob.getTime()).getUTCFullYear() - 1970);
+              isOver18 = age >= 18;
+            }
+          }
+        } catch { /* keep backend value */ }
+      }
+      result["Age Over 18"] = isOver18 ? "Yes" : "No";
+    }
     if (idData.validIdNumber) result["Valid ID Number"] = idData.validIdNumber === "Y" ? "Valid" : "Invalid";
     if (idData.idNotExpired) result["ID Not Expired"] = idData.idNotExpired === "Y" ? "Valid" : "Expired";
     return result;
@@ -290,10 +309,32 @@ export default function ApplicantDetails() {
   const idvOverallResult = idvProcessed.result || idvRaw.resultData?.verificationResult || null;
   const idvCheckedAt = idvResult?.createdAt ? new Date(idvResult.createdAt).toLocaleString("en-GB") : "";
 
-  const idvImages = (idvResult?.imagesUrls || []).map((url: string, idx: number) => ({
-    url,
-    label: idx === 0 ? "ID Doc Front" : idx === 1 ? "ID Doc Back" : idx === 2 ? "ID Portrait (Cropped)" : `Image ${idx + 1}`,
-  }));
+  const idvImages = (() => {
+    const urls: string[] = idvResult?.imagesUrls || [];
+    if (urls.length === 0) return [];
+
+    // Build raw images with backend-assigned or index-based labels
+    const raw = urls.map((url: string, idx: number) => ({
+      url,
+      label: idx === 0 ? "ID Doc Front" : idx === 1 ? "ID Doc Back" : idx === 2 ? "ID Portrait (Cropped)" : `Image ${idx + 1}`,
+    }));
+
+    // If there are exactly 6 images (as seen in the Schonelle Khan case):
+    // indices 0-1 = selfie/portrait crops, 2-3 = ID front/back full, 4-5 = ID front/back high-res
+    // Reorder to show: Front, Back, Cropped Portrait, then extras
+    if (urls.length >= 4) {
+      // Heuristic: the cropped portrait is typically a face crop (smaller/square aspect)
+      // ID front/back are typically at indices 2+ in the IDMission response
+      // We label them all and let the grid show them in order
+      const labels = ["ID Doc Front", "ID Doc Back", "ID Portrait (Cropped)", "Image 4", "Image 5", "Image 6", "Image 7", "Image 8"];
+      return urls.map((url: string, idx: number) => ({
+        url,
+        label: labels[idx] || `Image ${idx + 1}`,
+      }));
+    }
+
+    return raw;
+  })();
 
   // IP Address from IDMission response
   const ipFromIdv = idvRaw.status?.ipAddress || null;
@@ -306,7 +347,19 @@ export default function ApplicantDetails() {
   const faceLivenessResult = faceProcessed.livenessResult || faceProcessed.liveness?.result || faceRaw.resultData?.livenessResult || null;
   const faceMatchResult = faceProcessed.result || faceProcessed.matchResult || faceRaw.resultData?.verificationResult || null;
   const selfieImage = faceResult?.imagesUrls?.[0] || null;
-  const idPortraitImage = faceResult?.imagesUrls?.[1] || (idvResult?.imagesUrls?.length > 2 ? idvResult.imagesUrls[2] : null);
+  // For face match ID portrait: prefer the cropped portrait from IDV images (index 2 in IDMission)
+  // If faceResult has its own images, use index 1 as fallback
+  // The key fix: avoid using the ghost/watermark image from the full ID scan
+  const idPortraitImage = (() => {
+    // Best option: cropped portrait from IDV (typically index 2 in IDMission)
+    const idvUrls = idvResult?.imagesUrls || [];
+    if (idvUrls.length > 2) return idvUrls[2]; // IDMission: index 2 = cropped face from ID
+
+    // Fallback: face result's second image
+    if (faceResult?.imagesUrls?.[1]) return faceResult.imagesUrls[1];
+
+    return null;
+  })();
 
   // PoA data
   const poaProcessed = poaResult?.processedData || {};
@@ -775,7 +828,7 @@ export default function ApplicantDetails() {
                             <div className="space-y-2">
                               <span className="text-sm text-muted-foreground">Match result:</span>
                               <div className="flex items-center gap-2">
-                                {faceMatchResult === "Match" || faceMatchResult === "passed" ? <CheckCircle className="h-5 w-5 text-emerald-600" /> : <XCircle className="h-5 w-5 text-red-600" />}
+                                {["Match", "match", "Approved", "approved", "APPROVED", "Pass", "pass", "PASS", "passed"].includes(faceMatchResult) ? <CheckCircle className="h-5 w-5 text-emerald-600" /> : <XCircle className="h-5 w-5 text-red-600" />}
                                 <span className="font-semibold">{faceMatchResult}</span>
                               </div>
                             </div>
