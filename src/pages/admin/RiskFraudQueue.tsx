@@ -38,6 +38,10 @@ const riskLevelConfig: Record<string, { label: string; className: string }> = {
 };
 
 const actionConfig: Record<string, { label: string; className: string }> = {
+  PASS: {
+    label: "PASS",
+    className: "bg-emerald-500/10 text-emerald-700 border-emerald-500/20",
+  },
   APPROVE: {
     label: "APPROVE",
     className: "bg-emerald-500/10 text-emerald-700 border-emerald-500/20",
@@ -300,7 +304,8 @@ export default function RiskFraudQueue() {
             <TableBody>
               {paginatedQueue.map((item, index) => {
                 const levelCfg = riskLevelConfig[item.riskLevel] || riskLevelConfig.LOW;
-                const actionCfg = actionConfig[item.recommendedAction] || actionConfig.REVIEW;
+                const computedAction = item.riskScore < 35 ? "PASS" : item.riskScore < 65 ? "REVIEW" : "REJECT";
+                const actionCfg = actionConfig[computedAction] || actionConfig.REVIEW;
                 const statusCfg = statusConfig[item.status] || statusConfig.PENDING;
                 const StatusIcon = statusCfg.icon;
 

@@ -33,6 +33,10 @@ const riskLevelConfig: Record<string, { label: string; className: string; rangeT
 };
 
 const actionConfig: Record<string, { label: string; className: string }> = {
+  PASS: {
+    label: "PASS",
+    className: "bg-emerald-500/10 text-emerald-700 border-emerald-500/20",
+  },
   APPROVE: {
     label: "APPROVE",
     className: "bg-emerald-500/10 text-emerald-700 border-emerald-500/20",
@@ -147,7 +151,14 @@ export default function RiskFraudDetails() {
   const raw = riskData.rawResponse || {};
   const riskScore = raw.score ?? 0;
   const riskLevel = (raw.risk || "low").toUpperCase();
-  const recommendedAction = (raw.outcome || "review").toUpperCase();
+  // Compute recommended action from score (overrides backend if inconsistent)
+  // LOW (0-34) → PASS, MEDIUM (35-64) → REVIEW, HIGH (65-100) → REJECT
+  const computeRecommendedAction = (score: number): string => {
+    if (score < 35) return "PASS";
+    if (score < 65) return "REVIEW";
+    return "REJECT";
+  };
+  const recommendedAction = computeRecommendedAction(riskScore);
   const flags: string[] = raw.flags || [];
   const requestPayload = raw.requestPayload || {};
   const assessedAt = riskData.createdAt || riskData.updatedAt || "";
