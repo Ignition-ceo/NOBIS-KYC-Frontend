@@ -186,8 +186,8 @@ export function AdminSidebar({ mobileOpen, onMobileOpenChange }: AdminSidebarPro
         <div className="flex items-center justify-between p-4 pb-2">
           <div className="flex items-center gap-3">
             <img
-              src={nobisLogoWhite}
-              alt="Nobis"
+              src={branding.logoUrl || nobisLogoWhite}
+              alt="Logo"
               className={cn(
                 "object-contain transition-all duration-200",
                 showExpanded ? "h-8 w-auto max-w-[120px]" : "h-7 w-7"
