@@ -11,9 +11,8 @@ import {
   Loader2,
   ExternalLink,
   Users,
-  Shield,
-  Eye,
   Crown,
+  Eye,
   UserPlus,
   Mail,
 } from "lucide-react";
@@ -64,13 +63,11 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { api } from "@/lib/api";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { api } from "@/lib/api";
 
-// TODO: Replace with auth context tenant ID
-const TENANT_ID = "demo-tenant";
-const API_BASE = "https://backend-api.getnobis.com";
+
 
 // Event options for webhooks
 const WEBHOOK_EVENTS = [
@@ -129,6 +126,37 @@ export default function Settings() {
   const [removeMemberEmail, setRemoveMemberEmail] = useState<string | null>(null);
   const [memberForm, setMemberForm] = useState({ email: "", name: "", role: "org_analyst" as "org_admin" | "org_analyst" });
   const [savingMember, setSavingMember] = useState(false);
+
+  // Fetch webhooks from API
+  const fetchWebhooks = useCallback(async () => {
+    setWebhooksLoading(true);
+    try {
+      const res = await api.get("/webhooks");
+      const data = res.data;
+      setWebhooks(data.webhooks || data || []);
+    } catch (error) {
+      console.error("Failed to fetch webhooks:", error);
+      setWebhooks([]);
+    } finally {
+      setWebhooksLoading(false);
+    }
+  }, []);
+
+  const loadRedirectSettings = useCallback(async () => {
+    try {
+      const res = await api.get("/clients/profile");
+      const client = res.data?.user;
+      if (client?.redirectSettings) {
+        setRedirectSettings(client.redirectSettings);
+      }
+    } catch {
+      // Fall back to localStorage
+      const successUrl = localStorage.getItem("settings.redirect.successUrl") || "";
+      const cancelUrl = localStorage.getItem("settings.redirect.cancelUrl") || "";
+      const allowedDomains = localStorage.getItem("settings.redirect.allowedDomains") || "";
+      setRedirectSettings({ successUrl, cancelUrl, allowedDomains });
+    }
+  }, []);
 
   // Fetch team members
   const fetchTeamMembers = useCallback(async () => {
@@ -196,45 +224,6 @@ export default function Settings() {
     return email.slice(0, 2).toUpperCase();
   };
 
-  // Fetch webhooks from API
-  const fetchWebhooks = useCallback(async () => {
-    setWebhooksLoading(true);
-    try {
-      const response = await fetch(`${API_BASE}/webhooks/${TENANT_ID}`);
-      if (response.ok) {
-        const data = await response.json();
-        setWebhooks(data.webhooks || data || []);
-      } else {
-        // Fallback to demo data if API not available
-        console.warn("Webhooks API not available, using demo data");
-        setWebhooks([
-          {
-            id: "wh_demo_1",
-            url: "https://example.com/webhook",
-            events: ["applicant.created", "verification.completed"],
-            status: "active",
-            createdAt: new Date().toISOString(),
-          },
-        ]);
-      }
-    } catch (error) {
-      console.error("Failed to fetch webhooks:", error);
-      // Use demo data on error
-      setWebhooks([]);
-    } finally {
-      setWebhooksLoading(false);
-    }
-  }, []);
-
-  // Load redirect settings from localStorage
-  const loadRedirectSettings = useCallback(() => {
-    // TODO: Persist via backend TenantSettings API when available
-    const successUrl = localStorage.getItem("settings.redirect.successUrl") || "";
-    const cancelUrl = localStorage.getItem("settings.redirect.cancelUrl") || "";
-    const allowedDomains = localStorage.getItem("settings.redirect.allowedDomains") || "";
-    setRedirectSettings({ successUrl, cancelUrl, allowedDomains });
-  }, []);
-
   useEffect(() => {
     fetchWebhooks();
     loadRedirectSettings();
@@ -281,76 +270,44 @@ export default function Settings() {
     setSavingWebhook(true);
     try {
       const isEdit = !!editingWebhook;
-      const url = isEdit
-        ? `${API_BASE}/webhooks/${TENANT_ID}/${editingWebhook.id}`
-        : `${API_BASE}/webhooks/${TENANT_ID}`;
-      const method = isEdit ? "PUT" : "POST";
-
-      const response = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      let result;
+      if (isEdit) {
+        const res = await api.put(`/webhooks/${editingWebhook.id}`, {
           url: webhookForm.url,
           events: webhookForm.events,
-        }),
+        });
+        result = res.data;
+      } else {
+        const res = await api.post("/webhooks", {
+          url: webhookForm.url,
+          events: webhookForm.events,
+        });
+        result = res.data;
+      }
+
+      // Show signing secret for new webhooks
+      if (!isEdit && result.signingSecret) {
+        setNewSigningSecret(result.signingSecret);
+      }
+
+      toast({
+        title: isEdit ? "Webhook Updated" : "Webhook Created",
+        description: isEdit
+          ? "Your webhook has been updated successfully."
+          : "Your webhook has been created. Save the signing secret!",
       });
 
-      if (response.ok) {
-        const result = await response.json();
-        
-        // Show signing secret for new webhooks
-        if (!isEdit && result.signingSecret) {
-          setNewSigningSecret(result.signingSecret);
-        }
-
-        toast({
-          title: isEdit ? "Webhook Updated" : "Webhook Created",
-          description: isEdit
-            ? "Your webhook has been updated successfully."
-            : "Your webhook has been created. Save the signing secret!",
-        });
-
-        await fetchWebhooks();
-        if (!result.signingSecret) {
-          closeWebhookModal();
-        }
-      } else {
-        throw new Error("API request failed");
-      }
-    } catch (error) {
-      // Demo mode: simulate success
-      console.warn("API not available, simulating success");
-      const newId = `wh_${Date.now()}`;
-      const newSecret = `whsec_${btoa(Math.random().toString()).substring(0, 32)}`;
-
-      if (editingWebhook) {
-        setWebhooks((prev) =>
-          prev.map((wh) =>
-            wh.id === editingWebhook.id
-              ? { ...wh, url: webhookForm.url, events: webhookForm.events }
-              : wh
-          )
-        );
-        toast({
-          title: "Webhook Updated",
-          description: "Your webhook has been updated successfully.",
-        });
+      await fetchWebhooks();
+      if (!result.signingSecret) {
         closeWebhookModal();
-      } else {
-        const newWebhook: Webhook = {
-          id: newId,
-          url: webhookForm.url,
-          events: webhookForm.events,
-          status: "active",
-          createdAt: new Date().toISOString(),
-        };
-        setWebhooks((prev) => [...prev, newWebhook]);
-        setNewSigningSecret(newSecret);
-        toast({
-          title: "Webhook Created",
-          description: "Your webhook has been created. Save the signing secret!",
-        });
       }
+    } catch (error: any) {
+      console.error("Failed to save webhook:", error);
+      toast({
+        title: "Error",
+        description: error?.response?.data?.message || "Failed to save webhook.",
+        variant: "destructive",
+      });
     } finally {
       setSavingWebhook(false);
     }
@@ -360,24 +317,22 @@ export default function Settings() {
     if (!deleteWebhookId) return;
 
     try {
-      const response = await fetch(
-        `${API_BASE}/webhooks/${TENANT_ID}/${deleteWebhookId}`,
-        { method: "DELETE" }
-      );
-
-      if (!response.ok) {
-        throw new Error("API request failed");
-      }
-    } catch (error) {
-      console.warn("API not available, simulating delete");
+      await api.delete(`/webhooks/${deleteWebhookId}`);
+      setWebhooks((prev) => prev.filter((wh) => wh.id !== deleteWebhookId));
+      toast({
+        title: "Webhook Deleted",
+        description: "The webhook has been removed.",
+      });
+    } catch (error: any) {
+      console.error("Failed to delete webhook:", error);
+      toast({
+        title: "Error",
+        description: error?.response?.data?.message || "Failed to delete webhook.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleteWebhookId(null);
     }
-
-    setWebhooks((prev) => prev.filter((wh) => wh.id !== deleteWebhookId));
-    setDeleteWebhookId(null);
-    toast({
-      title: "Webhook Deleted",
-      description: "The webhook has been removed.",
-    });
   };
 
   const copySecret = async () => {
@@ -397,7 +352,8 @@ export default function Settings() {
   const saveRedirectSettings = async () => {
     setSavingRedirect(true);
     try {
-      // TODO: Persist via backend TenantSettings API when available
+      await api.patch("/clients/profile", { redirectSettings });
+      // Also save to localStorage as backup
       localStorage.setItem("settings.redirect.successUrl", redirectSettings.successUrl);
       localStorage.setItem("settings.redirect.cancelUrl", redirectSettings.cancelUrl);
       localStorage.setItem("settings.redirect.allowedDomains", redirectSettings.allowedDomains);
@@ -923,7 +879,7 @@ export default function Settings() {
               </Button>
             </div>
             <p className="mt-3 text-xs text-amber-600 bg-amber-50 p-3 rounded-lg border border-amber-200">
-              ⚠️ This secret is only shown once. Store it securely to verify webhook signatures.
+              ΓÜá∩╕Å This secret is only shown once. Store it securely to verify webhook signatures.
             </p>
           </div>
           <DialogFooter>
