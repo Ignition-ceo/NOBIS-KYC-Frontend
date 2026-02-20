@@ -28,6 +28,7 @@ import {
   Settings,
   AlertTriangle,
   Loader2,
+  Download,
 } from "lucide-react";
 
 // ── Event config ──
@@ -70,6 +71,26 @@ const eventConfig: Record<string, { label: string; className: string; icon: any 
   resource_accessed: {
     label: "Resource Accessed",
     className: "bg-indigo-50 text-indigo-700 border-indigo-200",
+    icon: Shield,
+  },
+  client_login: {
+    label: "Login",
+    className: "bg-green-50 text-green-700 border-green-200",
+    icon: Shield,
+  },
+  client_logout: {
+    label: "Logout",
+    className: "bg-slate-50 text-slate-600 border-slate-200",
+    icon: Shield,
+  },
+  risk_review_status_changed: {
+    label: "Risk Review",
+    className: "bg-orange-50 text-orange-700 border-orange-200",
+    icon: AlertTriangle,
+  },
+  sanctions_review_status_changed: {
+    label: "Sanctions Review",
+    className: "bg-red-50 text-red-700 border-red-200",
     icon: Shield,
   },
 };
@@ -129,6 +150,60 @@ export default function AuditLog() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [distinctActions, setDistinctActions] = useState<string[]>([]);
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    try {
+      setExporting(true);
+      // Fetch all events with current filters (no pagination limit)
+      const params = new URLSearchParams();
+      params.set("page", "1");
+      params.set("limit", "10000");
+      if (actionFilter && actionFilter !== "all") params.set("action", actionFilter);
+      if (search.trim()) params.set("search", search.trim());
+      if (startDate) params.set("startDate", startDate);
+      if (endDate) params.set("endDate", endDate);
+
+      const res = await api.get(`/audit?${params.toString()}`);
+      const allEvents = res.data.events || [];
+
+      // Build CSV
+      const headers = ["Timestamp", "Actor", "Actor Email", "Event", "Subject", "Subject ID", "Details"];
+      const rows = allEvents.map((event: any) => {
+        const actor = getActorDisplay(event.actor);
+        const dt = new Date(event.timestamp || event.createdAt);
+        const details = event.metadata?.note || event.metadata?.oldStatus
+          ? `${event.metadata?.oldStatus || ""} → ${event.metadata?.newStatus || ""}`
+          : "";
+        return [
+          dt.toISOString(),
+          actor.label,
+          actor.sublabel,
+          event.action || "",
+          event.metadata?.applicantName || event.object_id || "",
+          event.object_id || "",
+          details,
+        ];
+      });
+
+      const csvContent = [headers, ...rows]
+        .map((row) => row.map((cell: string) => `"${(cell || "").replace(/"/g, '""')}"`).join(","))
+        .join("\n");
+
+      // Download
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `audit-log-${new Date().toISOString().split("T")[0]}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Failed to export:", err);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const fetchEvents = useCallback(async () => {
     setLoading(true);
@@ -176,14 +251,26 @@ export default function AuditLog() {
 
       {/* Summary Card */}
       <div className="bg-white rounded-2xl border border-slate-200 p-5">
-        <div className="flex items-center gap-3 mb-5">
-          <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center">
-            <ClipboardList className="h-5 w-5 text-slate-600" />
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center">
+              <ClipboardList className="h-5 w-5 text-slate-600" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">Activity Log</h2>
+              <p className="text-xs text-slate-500">{total} {total === 1 ? "entry" : "entries"} found</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-base font-semibold text-slate-900">Activity Log</h2>
-            <p className="text-xs text-slate-500">{total} {total === 1 ? "entry" : "entries"} found</p>
-          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={handleExport}
+            disabled={exporting || events.length === 0}
+          >
+            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Export CSV
+          </Button>
         </div>
 
         {/* Filters */}

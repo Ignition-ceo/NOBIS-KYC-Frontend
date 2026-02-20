@@ -28,7 +28,16 @@ export const getAdminProfile = async () => {
   return data;
 };
 
-export const logoutUser = () => {
+export const logoutUser = async () => {
+  try {
+    // Log logout event before clearing session
+    await api.post("/audit/log", {
+      action: "client_logout",
+      metadata: { source: "dashboard", timestamp: new Date().toISOString() },
+    });
+  } catch {
+    // Don't block logout if audit fails
+  }
   localStorage.removeItem(LOCAL_STORAGE.TOKEN_KEY);
   localStorage.removeItem(LOCAL_STORAGE.ROLE);
   window.location.href = "/login";
