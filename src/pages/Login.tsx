@@ -103,11 +103,11 @@ const Login = () => {
             className="h-16 mx-auto mb-8"
           />
           <h2 className="text-3xl font-bold text-white mb-4">
-            Identity Verification Made Simple
+            National Onboarding Biometric Identification System
           </h2>
           <p className="text-white/80 text-lg max-w-md mx-auto">
-            KYC, AML screening, and fraud prevention for the Caribbean and
-            beyond.
+            KYC, AML screening, and fraud prevention for Trinidad &amp;
+            Tobago.
           </p>
         </div>
       </div>
