@@ -129,7 +129,7 @@ export function AdminSidebar({ mobileOpen, onMobileOpenChange }: AdminSidebarPro
       <NavLink
         to={item.route}
         onClick={handleNavClick}
-        end={item.key === "settings" || item.key === "branding"}
+        end={item.key === "dashboard" || item.key === "settings" || item.key === "branding"}
         className={cn(
           "sidebar-nav-item",
           isActive && "active",
@@ -164,7 +164,7 @@ export function AdminSidebar({ mobileOpen, onMobileOpenChange }: AdminSidebarPro
       <NavLink
         to={item.route}
         onClick={handleNavClick}
-        end={item.key === "settings" || item.key === "branding"}
+        end={item.key === "dashboard" || item.key === "settings" || item.key === "branding"}
         className={cn(
           "sidebar-nav-item",
           isActive && "active"
