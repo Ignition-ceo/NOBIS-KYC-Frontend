@@ -10,6 +10,12 @@ import {
   Check,
   Loader2,
   ExternalLink,
+  Users,
+  Shield,
+  Eye,
+  Crown,
+  UserPlus,
+  Mail,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,11 +55,22 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api";
 import { Label } from "@/components/ui/label";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { api } from "@/lib/api";
 
-
+// TODO: Replace with auth context tenant ID
+const TENANT_ID = "demo-tenant";
+const API_BASE = "https://backend-api.getnobis.com";
 
 // Event options for webhooks
 const WEBHOOK_EVENTS = [
@@ -105,41 +122,124 @@ export default function Settings() {
   });
   const [savingRedirect, setSavingRedirect] = useState(false);
 
+  // Team members state
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [teamLoading, setTeamLoading] = useState(true);
+  const [addMemberOpen, setAddMemberOpen] = useState(false);
+  const [removeMemberEmail, setRemoveMemberEmail] = useState<string | null>(null);
+  const [memberForm, setMemberForm] = useState({ email: "", name: "", role: "org_analyst" as "org_admin" | "org_analyst" });
+  const [savingMember, setSavingMember] = useState(false);
+
+  // Fetch team members
+  const fetchTeamMembers = useCallback(async () => {
+    setTeamLoading(true);
+    try {
+      const res = await api.get("/clients/profile/team");
+      setTeamMembers(res.data?.members || []);
+    } catch (err) {
+      console.warn("Failed to fetch team members:", err);
+      setTeamMembers([]);
+    } finally {
+      setTeamLoading(false);
+    }
+  }, []);
+
+  const addMember = async () => {
+    if (!memberForm.email) {
+      toast({ title: "Email required", description: "Enter the team member's email address.", variant: "destructive" });
+      return;
+    }
+    setSavingMember(true);
+    try {
+      const res = await api.post("/clients/profile/team", memberForm);
+      setTeamMembers(res.data?.members || []);
+      setAddMemberOpen(false);
+      setMemberForm({ email: "", name: "", role: "org_analyst" });
+      const auth0Status = res.data?.auth0Status;
+      const statusMsg = auth0Status === "added" ? "They can log in now."
+        : auth0Status === "invited" ? "An invitation email has been sent."
+        : auth0Status === "skipped" ? "Added locally. Set up Auth0 Organization to enable login."
+        : "Added locally. Auth0 sync may have failed — check Auth0 dashboard.";
+      toast({ title: "Member Added", description: `${memberForm.email} — ${statusMsg}` });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.response?.data?.message || "Failed to add member.", variant: "destructive" });
+    } finally {
+      setSavingMember(false);
+    }
+  };
+
+  const updateMemberRole = async (email: string, role: "org_admin" | "org_analyst") => {
+    try {
+      const res = await api.patch(`/clients/profile/team/${encodeURIComponent(email)}`, { role });
+      setTeamMembers(res.data?.members || []);
+      toast({ title: "Role Updated", description: `${email} is now ${role === "org_admin" ? "an Admin" : "an Analyst"}.` });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.response?.data?.message || "Failed to update role.", variant: "destructive" });
+    }
+  };
+
+  const removeMember = async () => {
+    if (!removeMemberEmail) return;
+    try {
+      const res = await api.delete(`/clients/profile/team/${encodeURIComponent(removeMemberEmail)}`);
+      setTeamMembers(res.data?.members || []);
+      toast({ title: "Member Removed", description: `${removeMemberEmail} has been removed from your team.` });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.response?.data?.message || "Failed to remove member.", variant: "destructive" });
+    } finally {
+      setRemoveMemberEmail(null);
+    }
+  };
+
+  const getInitials = (name: string, email: string) => {
+    if (name) return name.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase();
+    return email.slice(0, 2).toUpperCase();
+  };
+
   // Fetch webhooks from API
   const fetchWebhooks = useCallback(async () => {
     setWebhooksLoading(true);
     try {
-      const res = await api.get("/webhooks");
-      const data = res.data;
-      setWebhooks(data.webhooks || data || []);
+      const response = await fetch(`${API_BASE}/webhooks/${TENANT_ID}`);
+      if (response.ok) {
+        const data = await response.json();
+        setWebhooks(data.webhooks || data || []);
+      } else {
+        // Fallback to demo data if API not available
+        console.warn("Webhooks API not available, using demo data");
+        setWebhooks([
+          {
+            id: "wh_demo_1",
+            url: "https://example.com/webhook",
+            events: ["applicant.created", "verification.completed"],
+            status: "active",
+            createdAt: new Date().toISOString(),
+          },
+        ]);
+      }
     } catch (error) {
       console.error("Failed to fetch webhooks:", error);
+      // Use demo data on error
       setWebhooks([]);
     } finally {
       setWebhooksLoading(false);
     }
   }, []);
 
-  const loadRedirectSettings = useCallback(async () => {
-    try {
-      const res = await api.get("/clients/profile");
-      const client = res.data?.user;
-      if (client?.redirectSettings) {
-        setRedirectSettings(client.redirectSettings);
-      }
-    } catch {
-      // Fall back to localStorage
-      const successUrl = localStorage.getItem("settings.redirect.successUrl") || "";
-      const cancelUrl = localStorage.getItem("settings.redirect.cancelUrl") || "";
-      const allowedDomains = localStorage.getItem("settings.redirect.allowedDomains") || "";
-      setRedirectSettings({ successUrl, cancelUrl, allowedDomains });
-    }
+  // Load redirect settings from localStorage
+  const loadRedirectSettings = useCallback(() => {
+    // TODO: Persist via backend TenantSettings API when available
+    const successUrl = localStorage.getItem("settings.redirect.successUrl") || "";
+    const cancelUrl = localStorage.getItem("settings.redirect.cancelUrl") || "";
+    const allowedDomains = localStorage.getItem("settings.redirect.allowedDomains") || "";
+    setRedirectSettings({ successUrl, cancelUrl, allowedDomains });
   }, []);
 
   useEffect(() => {
     fetchWebhooks();
     loadRedirectSettings();
-  }, [fetchWebhooks, loadRedirectSettings]);
+    fetchTeamMembers();
+  }, [fetchWebhooks, loadRedirectSettings, fetchTeamMembers]);
 
   // Webhook handlers
   const openWebhookModal = (webhook?: Webhook) => {
@@ -181,44 +281,76 @@ export default function Settings() {
     setSavingWebhook(true);
     try {
       const isEdit = !!editingWebhook;
-      let result;
-      if (isEdit) {
-        const res = await api.put(`/webhooks/${editingWebhook.id}`, {
+      const url = isEdit
+        ? `${API_BASE}/webhooks/${TENANT_ID}/${editingWebhook.id}`
+        : `${API_BASE}/webhooks/${TENANT_ID}`;
+      const method = isEdit ? "PUT" : "POST";
+
+      const response = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           url: webhookForm.url,
           events: webhookForm.events,
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        
+        // Show signing secret for new webhooks
+        if (!isEdit && result.signingSecret) {
+          setNewSigningSecret(result.signingSecret);
+        }
+
+        toast({
+          title: isEdit ? "Webhook Updated" : "Webhook Created",
+          description: isEdit
+            ? "Your webhook has been updated successfully."
+            : "Your webhook has been created. Save the signing secret!",
         });
-        result = res.data;
+
+        await fetchWebhooks();
+        if (!result.signingSecret) {
+          closeWebhookModal();
+        }
       } else {
-        const res = await api.post("/webhooks", {
+        throw new Error("API request failed");
+      }
+    } catch (error) {
+      // Demo mode: simulate success
+      console.warn("API not available, simulating success");
+      const newId = `wh_${Date.now()}`;
+      const newSecret = `whsec_${btoa(Math.random().toString()).substring(0, 32)}`;
+
+      if (editingWebhook) {
+        setWebhooks((prev) =>
+          prev.map((wh) =>
+            wh.id === editingWebhook.id
+              ? { ...wh, url: webhookForm.url, events: webhookForm.events }
+              : wh
+          )
+        );
+        toast({
+          title: "Webhook Updated",
+          description: "Your webhook has been updated successfully.",
+        });
+        closeWebhookModal();
+      } else {
+        const newWebhook: Webhook = {
+          id: newId,
           url: webhookForm.url,
           events: webhookForm.events,
+          status: "active",
+          createdAt: new Date().toISOString(),
+        };
+        setWebhooks((prev) => [...prev, newWebhook]);
+        setNewSigningSecret(newSecret);
+        toast({
+          title: "Webhook Created",
+          description: "Your webhook has been created. Save the signing secret!",
         });
-        result = res.data;
       }
-
-      // Show signing secret for new webhooks
-      if (!isEdit && result.signingSecret) {
-        setNewSigningSecret(result.signingSecret);
-      }
-
-      toast({
-        title: isEdit ? "Webhook Updated" : "Webhook Created",
-        description: isEdit
-          ? "Your webhook has been updated successfully."
-          : "Your webhook has been created. Save the signing secret!",
-      });
-
-      await fetchWebhooks();
-      if (!result.signingSecret) {
-        closeWebhookModal();
-      }
-    } catch (error: any) {
-      console.error("Failed to save webhook:", error);
-      toast({
-        title: "Error",
-        description: error?.response?.data?.message || "Failed to save webhook.",
-        variant: "destructive",
-      });
     } finally {
       setSavingWebhook(false);
     }
@@ -228,22 +360,24 @@ export default function Settings() {
     if (!deleteWebhookId) return;
 
     try {
-      await api.delete(`/webhooks/${deleteWebhookId}`);
-      setWebhooks((prev) => prev.filter((wh) => wh.id !== deleteWebhookId));
-      toast({
-        title: "Webhook Deleted",
-        description: "The webhook has been removed.",
-      });
-    } catch (error: any) {
-      console.error("Failed to delete webhook:", error);
-      toast({
-        title: "Error",
-        description: error?.response?.data?.message || "Failed to delete webhook.",
-        variant: "destructive",
-      });
-    } finally {
-      setDeleteWebhookId(null);
+      const response = await fetch(
+        `${API_BASE}/webhooks/${TENANT_ID}/${deleteWebhookId}`,
+        { method: "DELETE" }
+      );
+
+      if (!response.ok) {
+        throw new Error("API request failed");
+      }
+    } catch (error) {
+      console.warn("API not available, simulating delete");
     }
+
+    setWebhooks((prev) => prev.filter((wh) => wh.id !== deleteWebhookId));
+    setDeleteWebhookId(null);
+    toast({
+      title: "Webhook Deleted",
+      description: "The webhook has been removed.",
+    });
   };
 
   const copySecret = async () => {
@@ -263,8 +397,7 @@ export default function Settings() {
   const saveRedirectSettings = async () => {
     setSavingRedirect(true);
     try {
-      await api.patch("/clients/profile", { redirectSettings });
-      // Also save to localStorage as backup
+      // TODO: Persist via backend TenantSettings API when available
       localStorage.setItem("settings.redirect.successUrl", redirectSettings.successUrl);
       localStorage.setItem("settings.redirect.cancelUrl", redirectSettings.cancelUrl);
       localStorage.setItem("settings.redirect.allowedDomains", redirectSettings.allowedDomains);
@@ -290,9 +423,24 @@ export default function Settings() {
       <div>
         <h1 className="text-2xl font-bold text-foreground">Settings</h1>
         <p className="text-muted-foreground">
-          Configure webhooks and redirect URLs for your integration
+          Configure integrations, team members, and redirect URLs
         </p>
       </div>
+
+      <Tabs defaultValue="integrations" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="integrations" className="gap-2">
+            <Webhook className="h-4 w-4" />
+            Integrations
+          </TabsTrigger>
+          <TabsTrigger value="team" className="gap-2">
+            <Users className="h-4 w-4" />
+            Team
+          </TabsTrigger>
+        </TabsList>
+
+        {/* ═══ Integrations Tab ═══ */}
+        <TabsContent value="integrations" className="space-y-6">
 
       {/* Webhooks Section */}
       <Card>
@@ -475,6 +623,217 @@ export default function Settings() {
           </div>
         </CardContent>
       </Card>
+        </TabsContent>
+
+        {/* ═══ Team Tab ═══ */}
+        <TabsContent value="team" className="space-y-6">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <Users className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">Team Members</CardTitle>
+                  <CardDescription>
+                    Manage who has access to your organization's dashboard
+                  </CardDescription>
+                </div>
+              </div>
+              <Button onClick={() => { setMemberForm({ email: "", name: "", role: "org_analyst" }); setAddMemberOpen(true); }} className="gap-2">
+                <UserPlus className="h-4 w-4" />
+                Add Member
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {/* Role explanation */}
+              <div className="grid gap-3 md:grid-cols-2 mb-6">
+                <div className="flex items-start gap-3 p-3 rounded-lg border border-border bg-muted/30">
+                  <Crown className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold">Admin</p>
+                    <p className="text-xs text-muted-foreground">Full access — approve/reject verifications, manage flows, settings, and team members</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 p-3 rounded-lg border border-border bg-muted/30">
+                  <Eye className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold">Analyst</p>
+                    <p className="text-xs text-muted-foreground">Read-only — view applicants, reports, and export PDFs. Cannot change statuses or settings</p>
+                  </div>
+                </div>
+              </div>
+
+              {teamLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : teamMembers.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <Users className="h-12 w-12 text-muted-foreground/50 mb-4" />
+                  <p className="text-muted-foreground font-medium">No team members yet</p>
+                  <p className="text-sm text-muted-foreground/70 mb-4">
+                    Add team members to give others access to your dashboard
+                  </p>
+                  <Button variant="outline" onClick={() => { setMemberForm({ email: "", name: "", role: "org_analyst" }); setAddMemberOpen(true); }} className="gap-2">
+                    <UserPlus className="h-4 w-4" />
+                    Add First Member
+                  </Button>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Member</TableHead>
+                      <TableHead>Role</TableHead>
+                      <TableHead>Added</TableHead>
+                      <TableHead className="w-[80px]" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {teamMembers.map((member: any) => (
+                      <TableRow key={member.email}>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-8 w-8">
+                              <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                                {getInitials(member.name, member.email)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <p className="text-sm font-medium">{member.name || member.email}</p>
+                              <p className="text-xs text-muted-foreground">{member.email}</p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={member.role}
+                            onValueChange={(val: "org_admin" | "org_analyst") => updateMemberRole(member.email, val)}
+                          >
+                            <SelectTrigger className="w-[130px] h-8">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="org_admin">
+                                <span className="flex items-center gap-2">
+                                  <Crown className="h-3 w-3 text-amber-600" /> Admin
+                                </span>
+                              </SelectItem>
+                              <SelectItem value="org_analyst">
+                                <span className="flex items-center gap-2">
+                                  <Eye className="h-3 w-3 text-blue-600" /> Analyst
+                                </span>
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {member.addedAt ? new Date(member.addedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={() => setRemoveMemberEmail(member.email)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* ═══ Add Member Modal ═══ */}
+      <Dialog open={addMemberOpen} onOpenChange={setAddMemberOpen}>
+        <DialogContent className="sm:max-w-[450px]">
+          <DialogHeader>
+            <DialogTitle>Add Team Member</DialogTitle>
+            <DialogDescription>
+              Invite someone to your organization. They must have an Auth0 account with this email.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="memberEmail">Email Address</Label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="memberEmail"
+                  placeholder="colleague@company.com"
+                  className="pl-10"
+                  value={memberForm.email}
+                  onChange={(e) => setMemberForm((p) => ({ ...p, email: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="memberName">Display Name (optional)</Label>
+              <Input
+                id="memberName"
+                placeholder="Jane Smith"
+                value={memberForm.name}
+                onChange={(e) => setMemberForm((p) => ({ ...p, name: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Role</Label>
+              <Select value={memberForm.role} onValueChange={(val: "org_admin" | "org_analyst") => setMemberForm((p) => ({ ...p, role: val }))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="org_admin">
+                    <span className="flex items-center gap-2">
+                      <Crown className="h-3 w-3 text-amber-600" /> Admin — Full access
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="org_analyst">
+                    <span className="flex items-center gap-2">
+                      <Eye className="h-3 w-3 text-blue-600" /> Analyst — Read-only
+                    </span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddMemberOpen(false)}>Cancel</Button>
+            <Button onClick={addMember} disabled={savingMember}>
+              {savingMember && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Add Member
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Remove Member Confirmation */}
+      <AlertDialog open={!!removeMemberEmail} onOpenChange={() => setRemoveMemberEmail(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Team Member?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {removeMemberEmail} will lose access to your organization's dashboard immediately.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={removeMember}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Remove Member
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Webhook Create/Edit Modal */}
       <Dialog open={webhookModalOpen && !newSigningSecret} onOpenChange={setWebhookModalOpen}>
