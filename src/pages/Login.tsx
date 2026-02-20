@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Loader2, LogIn } from "lucide-react";
 import nobisLogoWhite from "@/assets/nobis-logo-white.png";
+import tsttLogoWhite from "@/assets/tstt-logo-white.png";
 import caribbeanPeople from "@/assets/caribbean-people.webp";
 
 const Login = () => {
@@ -96,19 +97,25 @@ const Login = () => {
             className="w-full h-full object-cover opacity-30"
           />
         </div>
-        <div className="relative z-10 text-center px-12">
-          <img
-            src={nobisLogoWhite}
-            alt="NOBIS"
-            className="h-20 mx-auto mb-8"
-          />
-          <h2 className="text-2xl font-bold text-white mb-4">
-            National Onboarding Biometric Identification System
-          </h2>
-          <p className="text-white/80 text-base max-w-lg mx-auto">
-            KYC, AML screening, and fraud prevention for Trinidad &amp;
-            Tobago.
-          </p>
+        <div className="relative z-10 text-center px-12 flex flex-col items-center justify-center h-full">
+          <div className="flex-1 flex flex-col items-center justify-center">
+            <img
+              src={tsttLogoWhite}
+              alt="TSTT"
+              className="h-24 mx-auto mb-8"
+            />
+            <h2 className="text-2xl font-bold text-white mb-4">
+              National Onboarding Biometric Identification System
+            </h2>
+            <p className="text-white/80 text-base max-w-lg mx-auto">
+              KYC, AML screening, and fraud prevention for Trinidad &amp;
+              Tobago.
+            </p>
+          </div>
+          <div className="pb-8 flex items-center gap-2 opacity-60">
+            <span className="text-white/70 text-xs">Powered by</span>
+            <img src={nobisLogoWhite} alt="NOBIS" className="h-5" />
+          </div>
         </div>
       </div>
     </div>
