@@ -757,7 +757,7 @@ export default function Settings() {
           <DialogHeader>
             <DialogTitle>Add Team Member</DialogTitle>
             <DialogDescription>
-              Invite someone to your organization. They must have an Auth0 account with this email.
+              Add a team member by email. They'll receive an invitation to join your organization automatically.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
