@@ -100,12 +100,12 @@ const Login = () => {
           <img
             src={nobisLogoWhite}
             alt="NOBIS"
-            className="h-16 mx-auto mb-8"
+            className="h-20 mx-auto mb-8"
           />
-          <h2 className="text-3xl font-bold text-white mb-4">
+          <h2 className="text-2xl font-bold text-white mb-4">
             National Onboarding Biometric Identification System
           </h2>
-          <p className="text-white/80 text-lg max-w-md mx-auto">
+          <p className="text-white/80 text-base max-w-md mx-auto">
             KYC, AML screening, and fraud prevention for Trinidad &amp;
             Tobago.
           </p>
