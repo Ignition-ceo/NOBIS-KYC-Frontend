@@ -105,7 +105,7 @@ const Login = () => {
           <h2 className="text-2xl font-bold text-white mb-4">
             National Onboarding Biometric Identification System
           </h2>
-          <p className="text-white/80 text-base max-w-md mx-auto">
+          <p className="text-white/80 text-base max-w-lg mx-auto">
             KYC, AML screening, and fraud prevention for Trinidad &amp;
             Tobago.
           </p>
