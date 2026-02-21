@@ -14,6 +14,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useState, useMemo } from "react";
 import { StepState } from "@/components/admin/VerificationStepIcon";
+import { api } from "@/lib/api";
 
 export interface Applicant {
   id: string;
@@ -157,18 +158,52 @@ export function ApplicantSidePanel({ applicant, onClose, onStatusChange }: Appli
     .join("")
     .toUpperCase();
 
-  const handleApprove = () => {
-    onStatusChange(applicant.id, "APPROVED");
+  const handleApprove = async () => {
+    await persistStatusChange("APPROVED");
   };
 
   const handleReject = () => {
-    onStatusChange(applicant.id, "REJECTED");
-    setRejectModalOpen(false);
-    setRejectReason("");
+    // Reject is triggered from the modal's confirm button
   };
 
-  const handleNeedsReview = () => {
-    onStatusChange(applicant.id, "NEEDS_REVIEW");
+  const handleNeedsReview = async () => {
+    await persistStatusChange("NEEDS_REVIEW");
+  };
+
+  // Map steps keys back to backend verificationType names
+  const stepKeyToVerificationType: Record<string, string> = {
+    phone: "phone",
+    email: "email",
+    idDoc: "idDocument",
+    selfie: "selfie",
+    poa: "proofOfAddress",
+  };
+
+  const persistStatusChange = async (newStatus: string) => {
+    const targetVerifStatus = newStatus === "APPROVED" ? "verified" : newStatus === "REJECTED" ? "rejected" : "pending";
+
+    try {
+      // Update each verification step via the dedicated endpoint (same as ApplicantDetails)
+      const steps = applicant.steps || {};
+      const activeSteps = Object.keys(steps).filter(k => steps[k as keyof typeof steps] !== undefined);
+
+      if (activeSteps.length > 0) {
+        for (const stepKey of activeSteps) {
+          const verificationType = stepKeyToVerificationType[stepKey] || stepKey;
+          await api.patch(`/applicants/${applicant.id}/verification-status`, {
+            verificationType,
+            status: targetVerifStatus,
+          });
+        }
+      } else {
+        // Fallback: if no steps, update generic status
+        await api.patch(`/applicants/${applicant.id}`, { verificationStatus: targetVerifStatus });
+      }
+
+      onStatusChange(applicant.id, newStatus as Applicant["status"]);
+    } catch (err) {
+      console.error("Failed to update status:", err);
+    }
   };
 
   return (
@@ -376,8 +411,8 @@ export function ApplicantSidePanel({ applicant, onClose, onStatusChange }: Appli
               Cancel
             </Button>
             <Button
-              onClick={() => {
-                onStatusChange(applicant.id, "REJECTED");
+              onClick={async () => {
+                await persistStatusChange("REJECTED");
                 setRejectModalOpen(false);
                 setRejectReason("");
               }}
