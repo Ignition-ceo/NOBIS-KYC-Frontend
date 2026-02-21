@@ -28,6 +28,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { api } from "@/lib/api";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import nobisLogoWhite from "@/assets/nobis-logo-white.png";
 import { useBranding } from "@/contexts/BrandingContext";
@@ -79,7 +80,13 @@ export function AdminSidebar({ mobileOpen, onMobileOpenChange }: AdminSidebarPro
     localStorage.setItem(STORAGE_KEY, String(collapsed));
   }, [collapsed]);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await api.post("/audit/logout");
+    } catch (e) {
+      // Don't block logout if audit fails
+      console.warn("Failed to log logout event:", e);
+    }
     auth0Logout({ logoutParams: { returnTo: window.location.origin + "/login" } });
   };
 
