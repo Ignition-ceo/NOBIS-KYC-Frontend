@@ -237,7 +237,7 @@ export default function ApplicantDetails() {
     const checks: Record<string, string> = {};
     for (const [key, val] of Object.entries(details)) {
       if (val && typeof val === "object" && "DecisionResult" in (val as any)) {
-        const label = key.replace("Decision_", "").replace(/([A-Z])/g, " $1").trim();
+        const label = key.replace("Decision_", "").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/\bI D\b/g, "ID").replace(/\bI Da/g, "ID A").trim();
         checks[label] = (val as any).DecisionResult;
       }
     }
