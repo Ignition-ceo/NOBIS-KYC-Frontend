@@ -3,12 +3,10 @@ import { useAuth0 } from "@auth0/auth0-react";
 import { useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
-
 export default function AuthCallback() {
-  const { isAuthenticated, isLoading, error, getAccessTokenSilently } = useAuth0();
+  const { isAuthenticated, isLoading, error, getAccessTokenSilently, user } = useAuth0();
   const navigate = useNavigate();
   const loggedRef = useRef(false);
-
   useEffect(() => {
     const completeLogin = async () => {
       if (!isLoading && isAuthenticated && !loggedRef.current) {
@@ -20,7 +18,11 @@ export default function AuthCallback() {
             // Log login event to audit
             await api.post("/audit/log", {
               action: "client_login",
-              metadata: { source: "auth0", timestamp: new Date().toISOString() },
+              metadata: {
+                source: "auth0",
+                timestamp: new Date().toISOString(),
+                note: `${user?.name || user?.email || "User"} logged in`,
+              },
             }).catch(() => {});
           }
         } catch {
@@ -30,8 +32,7 @@ export default function AuthCallback() {
       }
     };
     completeLogin();
-  }, [isLoading, isAuthenticated, navigate, getAccessTokenSilently]);
-
+  }, [isLoading, isAuthenticated, navigate, getAccessTokenSilently, user]);
   return (
     <div className="flex items-center justify-center h-screen">
       <div className="text-center">
