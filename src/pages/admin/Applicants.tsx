@@ -12,8 +12,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   Loader2,
-  Trash2,
-  Eye,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -174,7 +172,6 @@ export default function Applicants() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
 
   const loadApplicants = useCallback(async () => {
@@ -197,7 +194,6 @@ export default function Applicants() {
 
       const params: Record<string, any> = {
         page,
-        limit: pageSize,
         searchText: searchQuery || undefined,
         verificationStatus: verificationStatus || undefined,
         sortBy: sortBy === "newest" || sortBy === "oldest" ? "createdAt" : undefined,
@@ -220,7 +216,7 @@ export default function Applicants() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, searchQuery, activeTab, statusFilter, sortBy]);
+  }, [page, searchQuery, activeTab, statusFilter, sortBy]);
 
   useEffect(() => {
     loadApplicants();
@@ -229,7 +225,7 @@ export default function Applicants() {
   // Reset page when filters change
   useEffect(() => {
     setPage(1);
-  }, [searchQuery, activeTab, statusFilter, sortBy, pageSize]);
+  }, [searchQuery, activeTab, statusFilter, sortBy]);
 
   const stats = useMemo(
     () => ({
@@ -243,8 +239,17 @@ export default function Applicants() {
   );
 
   const handleStatusChange = async (applicantId: string, newStatus: string) => {
+    // Map display status back to backend verificationStatus values
+    const backendStatusMap: Record<string, string> = {
+      APPROVED: "verified",
+      REJECTED: "rejected",
+      NEEDS_REVIEW: "requested",
+      PENDING: "pending",
+    };
+    const backendStatus = backendStatusMap[newStatus] || newStatus.toLowerCase();
+
     try {
-      await updateApplicantService(applicantId, { overallStatus: newStatus.toLowerCase() });
+      await updateApplicantService(applicantId, { verificationStatus: backendStatus });
       toast.success(`Applicant status updated to ${newStatus}`);
       loadApplicants();
     } catch (err) {
@@ -312,8 +317,8 @@ export default function Applicants() {
   };
 
   return (
-    <div className="flex gap-0 min-h-[calc(100vh-80px)]">
-      <div className="flex-1 flex flex-col min-w-0 p-6 overflow-y-auto">
+    <div className="flex gap-0 h-[calc(100vh-80px)]">
+      <div className="flex-1 flex flex-col min-w-0 p-6 overflow-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -403,71 +408,8 @@ export default function Applicants() {
           </div>
         ) : (
           <>
-            {/* Bulk Actions Bar */}
-            {selectedIds.size > 0 && (
-              <div className="flex items-center gap-3 mb-3 p-3 bg-primary/5 border border-primary/20 rounded-lg">
-                <span className="text-sm font-medium text-primary">
-                  {selectedIds.size} selected
-                </span>
-                <div className="h-4 w-px bg-primary/20" />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 gap-1.5 text-red-600 hover:text-red-700 hover:bg-red-50"
-                  onClick={async () => {
-                    if (!confirm(`Delete ${selectedIds.size} applicant(s)?`)) return;
-                    // TODO: wire to delete API
-                    toast.info("Delete not yet implemented");
-                    setSelectedIds(new Set());
-                  }}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Delete
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 gap-1.5 text-primary hover:text-primary/80 hover:bg-primary/10"
-                  onClick={() => {
-                    if (selectedIds.size === 1) {
-                      const id = Array.from(selectedIds)[0];
-                      navigate(`/client/users/${id}`);
-                    } else {
-                      toast.info("Select a single applicant to view");
-                    }
-                  }}
-                >
-                  <Eye className="h-3.5 w-3.5" />
-                  View
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 gap-1.5 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50"
-                  onClick={async () => {
-                    for (const id of selectedIds) {
-                      await handleStatusChange(id, "APPROVED");
-                    }
-                    setSelectedIds(new Set());
-                  }}
-                >
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  Mark as Reviewed
-                </Button>
-                <div className="flex-1" />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 text-muted-foreground hover:text-foreground"
-                  onClick={() => setSelectedIds(new Set())}
-                >
-                  Clear selection
-                </Button>
-              </div>
-            )}
-
             {/* Table */}
-            <div className="rounded-lg border bg-card">
+            <div className="rounded-lg border bg-card overflow-hidden">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-slate-50/50">
@@ -603,8 +545,8 @@ export default function Applicants() {
                                 className="gap-2 cursor-pointer"
                                 onClick={() => navigate(`/client/users/${applicant.id}`)}
                               >
-                                <Eye className="h-4 w-4" />
-                                View applicant
+                                <ArrowUpRight className="h-4 w-4" />
+                                Open applicant
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 className="gap-2 cursor-pointer"
@@ -619,19 +561,21 @@ export default function Applicants() {
                                 onClick={() => handleStatusChange(applicant.id, "APPROVED")}
                               >
                                 <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                                Mark as Reviewed
+                                Approve
                               </DropdownMenuItem>
-                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="gap-2 cursor-pointer"
+                                onClick={() => handleStatusChange(applicant.id, "NEEDS_REVIEW")}
+                              >
+                                <AlertTriangle className="h-4 w-4 text-amber-600" />
+                                Needs Review
+                              </DropdownMenuItem>
                               <DropdownMenuItem
                                 className="gap-2 cursor-pointer text-red-600"
-                                onClick={() => {
-                                  if (!confirm(`Delete applicant ${applicant.fullName}?`)) return;
-                                  // TODO: wire to delete API
-                                  toast.info("Delete not yet implemented");
-                                }}
+                                onClick={() => handleStatusChange(applicant.id, "REJECTED")}
                               >
-                                <Trash2 className="h-4 w-4" />
-                                Delete
+                                <XCircle className="h-4 w-4" />
+                                Reject
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -654,68 +598,29 @@ export default function Applicants() {
             </div>
 
             {/* Pagination */}
-            <div className="flex items-center justify-between mt-4 px-1">
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Rows per page</span>
-                <Select value={pageSize.toString()} onValueChange={(v) => setPageSize(Number(v))}>
-                  <SelectTrigger className="w-[70px] h-8">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="10">10</SelectItem>
-                    <SelectItem value="25">25</SelectItem>
-                    <SelectItem value="50">50</SelectItem>
-                    <SelectItem value="100">100</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex items-center gap-2">
+            {total > 10 && (
+              <div className="flex items-center justify-center gap-2 mt-4">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  ← Previous
+                </Button>
                 <span className="text-sm text-muted-foreground">
-                  {Math.min((page - 1) * pageSize + 1, total)}–{Math.min(page * pageSize, total)} of {total}
+                  Page {page} of {Math.ceil(total / 10)}
                 </span>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-8 w-8"
-                    disabled={page <= 1}
-                    onClick={() => setPage(1)}
-                  >
-                    <span className="text-xs">«</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-8 w-8"
-                    disabled={page <= 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  >
-                    <span className="text-xs">‹</span>
-                  </Button>
-                  <span className="px-2 text-sm font-medium">
-                    {page} / {Math.max(1, Math.ceil(total / pageSize))}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-8 w-8"
-                    disabled={page >= Math.ceil(total / pageSize)}
-                    onClick={() => setPage((p) => p + 1)}
-                  >
-                    <span className="text-xs">›</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-8 w-8"
-                    disabled={page >= Math.ceil(total / pageSize)}
-                    onClick={() => setPage(Math.ceil(total / pageSize))}
-                  >
-                    <span className="text-xs">»</span>
-                  </Button>
-                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={page >= Math.ceil(total / 10)}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  Next →
+                </Button>
               </div>
-            </div>
+            )}
           </>
         )}
       </div>
