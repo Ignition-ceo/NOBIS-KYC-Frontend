@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 export default function AuthCallback() {
-  const { isAuthenticated, isLoading, error, getAccessTokenSilently, user } = useAuth0();
+  const { isAuthenticated, isLoading, error, getAccessTokenSilently } = useAuth0();
   const navigate = useNavigate();
   const loggedRef = useRef(false);
   useEffect(() => {
@@ -15,13 +15,23 @@ export default function AuthCallback() {
           // Ensure token is available for API calls
           const token = await getAccessTokenSilently();
           if (token) {
+            // Fetch profile to get the user's real name
+            let displayName = "User";
+            try {
+              const profile = await api.get("/clients/profile");
+              const p = profile.data;
+              displayName = [p.firstName, p.lastName].filter(Boolean).join(" ") || p.email || "User";
+            } catch {
+              // Fall back gracefully
+            }
+
             // Log login event to audit
             await api.post("/audit/log", {
               action: "client_login",
               metadata: {
                 source: "auth0",
                 timestamp: new Date().toISOString(),
-                note: `${user?.name || user?.email || "User"} logged in`,
+                note: `${displayName} logged in`,
               },
             }).catch(() => {});
           }
@@ -32,7 +42,7 @@ export default function AuthCallback() {
       }
     };
     completeLogin();
-  }, [isLoading, isAuthenticated, navigate, getAccessTokenSilently, user]);
+  }, [isLoading, isAuthenticated, navigate, getAccessTokenSilently]);
   return (
     <div className="flex items-center justify-center h-screen">
       <div className="text-center">
