@@ -333,7 +333,7 @@ export function ApplicantSidePanel({ applicant, onClose, onStatusChange }: Appli
             <Button
               onClick={handleNeedsReview}
               variant="outline"
-              className="w-full h-11 rounded-xl border-amber-200 text-amber-700 hover:bg-amber-50 font-semibold"
+              className="w-full h-11 rounded-xl border-amber-200 text-amber-700 hover:bg-amber-50 hover:text-amber-800 font-semibold"
             >
               <AlertTriangle className="h-4 w-4 mr-2" />
               Needs Review
@@ -346,7 +346,7 @@ export function ApplicantSidePanel({ applicant, onClose, onStatusChange }: Appli
           <Button 
             className="w-full h-12 rounded-xl bg-primary hover:bg-primary/90 font-semibold"
             onClick={() => {
-              navigate(`/client/users/${applicant.id}`);
+              navigate(`/admin/applicants/${applicant.id}`);
               onClose();
             }}
           >
@@ -356,9 +356,9 @@ export function ApplicantSidePanel({ applicant, onClose, onStatusChange }: Appli
         </div>
       </div>
 
-      {/* Reject Modal */}
+      {/* Reject Modal - must use portal to render above side panel */}
       <Dialog open={rejectModalOpen} onOpenChange={setRejectModalOpen}>
-        <DialogContent>
+        <DialogContent className="z-[60]">
           <DialogHeader>
             <DialogTitle>Reject applicant</DialogTitle>
             <DialogDescription>
@@ -375,7 +375,14 @@ export function ApplicantSidePanel({ applicant, onClose, onStatusChange }: Appli
             <Button variant="outline" onClick={() => setRejectModalOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleReject} className="bg-red-600 hover:bg-red-700 text-white">
+            <Button
+              onClick={() => {
+                onStatusChange(applicant.id, "REJECTED");
+                setRejectModalOpen(false);
+                setRejectReason("");
+              }}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
               Confirm rejection
             </Button>
           </DialogFooter>
