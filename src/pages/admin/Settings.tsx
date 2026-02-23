@@ -10,6 +10,11 @@ import {
   Check,
   Loader2,
   ExternalLink,
+  Users,
+  Crown,
+  Eye,
+  UserPlus,
+  Mail,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,6 +64,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 
 
@@ -112,6 +119,13 @@ export default function Settings() {
   });
   const [savingRedirect, setSavingRedirect] = useState(false);
 
+  // Team state
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [teamLoading, setTeamLoading] = useState(true);
+  const [addMemberOpen, setAddMemberOpen] = useState(false);
+  const [removeMemberEmail, setRemoveMemberEmail] = useState<string | null>(null);
+  const [memberForm, setMemberForm] = useState({ email: "", name: "", role: "org_analyst" });
+  const [savingMember, setSavingMember] = useState(false);
 
   // Fetch webhooks from API
   const fetchWebhooks = useCallback(async () => {
@@ -143,11 +157,79 @@ export default function Settings() {
     }
   }, []);
 
+  // Team handlers
+  const fetchTeamMembers = useCallback(async () => {
+    setTeamLoading(true);
+    try {
+      const res = await api.get("/clients/profile/team");
+      setTeamMembers(res.data?.members || []);
+    } catch (err) {
+      console.error("Failed to fetch team:", err);
+      setTeamMembers([]);
+    } finally {
+      setTeamLoading(false);
+    }
+  }, []);
+
+  const addMember = async () => {
+    if (!memberForm.email) {
+      toast({ title: "Email required", variant: "destructive" });
+      return;
+    }
+    setSavingMember(true);
+    try {
+      const res = await api.post("/clients/profile/team", memberForm);
+      const status = res.data?.auth0Status;
+      const msgs: Record<string, string> = {
+        added: "They can log in now.",
+        invited: "An invitation email has been sent.",
+        skipped: "Added locally. Set up Auth0 Organization to enable login.",
+        failed: "Added locally. Auth0 sync may have failed — check Auth0 dashboard.",
+      };
+      toast({ title: "Member added", description: msgs[status] || "Member added successfully." });
+      setAddMemberOpen(false);
+      setMemberForm({ email: "", name: "", role: "org_analyst" });
+      fetchTeamMembers();
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.response?.data?.message || "Failed to add member.", variant: "destructive" });
+    } finally {
+      setSavingMember(false);
+    }
+  };
+
+  const updateMemberRole = async (email: string, role: "org_admin" | "org_analyst") => {
+    try {
+      await api.patch(`/clients/profile/team/${encodeURIComponent(email)}`, { role });
+      toast({ title: "Role updated" });
+      fetchTeamMembers();
+    } catch {
+      toast({ title: "Error", description: "Failed to update role.", variant: "destructive" });
+    }
+  };
+
+  const removeMember = async () => {
+    if (!removeMemberEmail) return;
+    try {
+      await api.delete(`/clients/profile/team/${encodeURIComponent(removeMemberEmail)}`);
+      toast({ title: "Member removed" });
+      setRemoveMemberEmail(null);
+      fetchTeamMembers();
+    } catch {
+      toast({ title: "Error", description: "Failed to remove member.", variant: "destructive" });
+    }
+  };
+
+  const getInitials = (name?: string, email?: string) => {
+    if (name) return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+    if (email) return email.slice(0, 2).toUpperCase();
+    return "?";
+  };
 
   useEffect(() => {
     fetchWebhooks();
     loadRedirectSettings();
-  }, [fetchWebhooks, loadRedirectSettings]);
+    fetchTeamMembers();
+  }, [fetchWebhooks, loadRedirectSettings, fetchTeamMembers]);
 
   // Webhook handlers
   const openWebhookModal = (webhook?: Webhook) => {
@@ -298,9 +380,18 @@ export default function Settings() {
       <div>
         <h1 className="text-2xl font-bold text-foreground">Settings</h1>
         <p className="text-muted-foreground">
-          Configure webhooks and redirect URLs for your integration
+          Configure webhooks, redirect URLs, and manage your team
         </p>
       </div>
+
+      <Tabs defaultValue="integrations">
+        <TabsList>
+          <TabsTrigger value="integrations">Integrations</TabsTrigger>
+          <TabsTrigger value="team">Team</TabsTrigger>
+        </TabsList>
+
+        {/* ═══ Integrations Tab ═══ */}
+        <TabsContent value="integrations" className="space-y-6">
 
       {/* Webhooks Section */}
       <Card>
@@ -461,7 +552,7 @@ export default function Settings() {
             <Label htmlFor="allowedDomains">Allowed Redirect Domains</Label>
             <Textarea
               id="allowedDomains"
-              placeholder="yourapp.com&#10;staging.yourapp.com&#10;localhost:3000"
+              placeholder={"yourapp.com\nstaging.yourapp.com\nlocalhost:3000"}
               value={redirectSettings.allowedDomains}
               onChange={(e) =>
                 setRedirectSettings((prev) => ({
@@ -483,7 +574,217 @@ export default function Settings() {
           </div>
         </CardContent>
       </Card>
+        </TabsContent>
 
+        {/* ═══ Team Tab ═══ */}
+        <TabsContent value="team" className="space-y-6">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <Users className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">Team Members</CardTitle>
+                  <CardDescription>
+                    Manage who has access to your organization's dashboard
+                  </CardDescription>
+                </div>
+              </div>
+              <Button onClick={() => { setMemberForm({ email: "", name: "", role: "org_analyst" }); setAddMemberOpen(true); }} className="gap-2">
+                <UserPlus className="h-4 w-4" />
+                Add Member
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {/* Role explanation */}
+              <div className="grid gap-3 md:grid-cols-2 mb-6">
+                <div className="flex items-start gap-3 p-3 rounded-lg border border-border bg-muted/30">
+                  <Crown className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold">Admin</p>
+                    <p className="text-xs text-muted-foreground">Full access — approve/reject verifications, manage flows, settings, and team members</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 p-3 rounded-lg border border-border bg-muted/30">
+                  <Eye className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold">Analyst</p>
+                    <p className="text-xs text-muted-foreground">Read-only — view applicants, reports, and export PDFs. Cannot change statuses or settings</p>
+                  </div>
+                </div>
+              </div>
+
+              {teamLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : teamMembers.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <Users className="h-12 w-12 text-muted-foreground/50 mb-4" />
+                  <p className="text-muted-foreground font-medium">No team members yet</p>
+                  <p className="text-sm text-muted-foreground/70 mb-4">
+                    Add team members to give others access to your dashboard
+                  </p>
+                  <Button variant="outline" onClick={() => { setMemberForm({ email: "", name: "", role: "org_analyst" }); setAddMemberOpen(true); }} className="gap-2">
+                    <UserPlus className="h-4 w-4" />
+                    Add First Member
+                  </Button>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Member</TableHead>
+                      <TableHead>Role</TableHead>
+                      <TableHead>Added</TableHead>
+                      <TableHead className="w-[80px]" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {teamMembers.map((member: any) => (
+                      <TableRow key={member.email}>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-8 w-8">
+                              <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                                {getInitials(member.name, member.email)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <p className="text-sm font-medium">{member.name || member.email}</p>
+                              <p className="text-xs text-muted-foreground">{member.email}</p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={member.role}
+                            onValueChange={(val: "org_admin" | "org_analyst") => updateMemberRole(member.email, val)}
+                          >
+                            <SelectTrigger className="w-[130px] h-8">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="org_admin">
+                                <span className="flex items-center gap-2">
+                                  <Crown className="h-3 w-3 text-amber-600" /> Admin
+                                </span>
+                              </SelectItem>
+                              <SelectItem value="org_analyst">
+                                <span className="flex items-center gap-2">
+                                  <Eye className="h-3 w-3 text-blue-600" /> Analyst
+                                </span>
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {member.addedAt ? new Date(member.addedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={() => setRemoveMemberEmail(member.email)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* ═══ Add Member Modal ═══ */}
+      <Dialog open={addMemberOpen} onOpenChange={setAddMemberOpen}>
+        <DialogContent className="sm:max-w-[450px]">
+          <DialogHeader>
+            <DialogTitle>Add Team Member</DialogTitle>
+            <DialogDescription>
+              Add a team member by email. They'll receive an invitation to join your organization automatically.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="memberEmail">Email Address</Label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="memberEmail"
+                  placeholder="colleague@company.com"
+                  className="pl-10"
+                  value={memberForm.email}
+                  onChange={(e) => setMemberForm((p) => ({ ...p, email: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="memberName">Display Name (optional)</Label>
+              <Input
+                id="memberName"
+                placeholder="Jane Smith"
+                value={memberForm.name}
+                onChange={(e) => setMemberForm((p) => ({ ...p, name: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Role</Label>
+              <Select value={memberForm.role} onValueChange={(val: "org_admin" | "org_analyst") => setMemberForm((p) => ({ ...p, role: val }))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="org_admin">
+                    <span className="flex items-center gap-2">
+                      <Crown className="h-3 w-3 text-amber-600" /> Admin — Full access
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="org_analyst">
+                    <span className="flex items-center gap-2">
+                      <Eye className="h-3 w-3 text-blue-600" /> Analyst — Read-only
+                    </span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddMemberOpen(false)}>Cancel</Button>
+            <Button onClick={addMember} disabled={savingMember}>
+              {savingMember && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Add Member
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Remove Member Confirmation */}
+      <AlertDialog open={!!removeMemberEmail} onOpenChange={() => setRemoveMemberEmail(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Team Member?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {removeMemberEmail} will lose access to your organization's dashboard immediately.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={removeMember}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Remove Member
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Webhook Create/Edit Modal */}
       <Dialog open={webhookModalOpen && !newSigningSecret} onOpenChange={setWebhookModalOpen}>
