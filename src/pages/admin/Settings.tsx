@@ -10,8 +10,6 @@ import {
   Check,
   Loader2,
   ExternalLink,
-  Shield,
-  SlidersHorizontal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,7 +50,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api";
 import { api } from "@/lib/api";
 import { Label } from "@/components/ui/label";
 import {
@@ -115,14 +112,6 @@ export default function Settings() {
   });
   const [savingRedirect, setSavingRedirect] = useState(false);
 
-  // Screening provider state
-  const [screeningConfig, setScreeningConfig] = useState({
-    provider: "open_sanctions",
-    threshold: 0.7,
-    dataset: "default",
-  });
-  const [savingScreening, setSavingScreening] = useState(false);
-  const [screeningLoaded, setScreeningLoaded] = useState(false);
 
   // Fetch webhooks from API
   const fetchWebhooks = useCallback(async () => {
@@ -146,41 +135,15 @@ export default function Settings() {
       if (client?.redirectSettings) {
         setRedirectSettings(client.redirectSettings);
       }
-      if (client?.screeningConfig) {
-        setScreeningConfig({
-          provider: client.screeningConfig.provider || "open_sanctions",
-          threshold: client.screeningConfig.threshold ?? 0.7,
-          dataset: client.screeningConfig.dataset || "default",
-        });
       }
-      setScreeningLoaded(true);
     } catch {
       const successUrl = localStorage.getItem("settings.redirect.successUrl") || "";
       const cancelUrl = localStorage.getItem("settings.redirect.cancelUrl") || "";
       const allowedDomains = localStorage.getItem("settings.redirect.allowedDomains") || "";
       setRedirectSettings({ successUrl, cancelUrl, allowedDomains });
-      setScreeningLoaded(true);
     }
   }, []);
 
-  const saveScreeningConfig = async () => {
-    setSavingScreening(true);
-    try {
-      await api.patch("/clients/profile", { screeningConfig });
-      toast({
-        title: "Screening Settings Saved",
-        description: `Provider set to ${screeningConfig.provider === "open_sanctions" ? "OpenSanctions" : "AML Watcher"}`,
-      });
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error?.response?.data?.message || "Failed to save screening settings.",
-        variant: "destructive",
-      });
-    } finally {
-      setSavingScreening(false);
-    }
-  };
 
   useEffect(() => {
     fetchWebhooks();
@@ -522,106 +485,6 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      {/* Screening Provider Section */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-orange-100 flex items-center justify-center">
-              <Shield className="h-5 w-5 text-orange-600" />
-            </div>
-            <div>
-              <CardTitle className="text-lg">AML / Sanctions Screening</CardTitle>
-              <CardDescription>
-                Choose your screening provider and configure matching settings
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="space-y-2">
-              <Label>Screening Provider</Label>
-              <Select
-                value={screeningConfig.provider}
-                onValueChange={(value) =>
-                  setScreeningConfig((prev) => ({ ...prev, provider: value }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="open_sanctions">
-                    OpenSanctions
-                  </SelectItem>
-                  <SelectItem value="aml_watcher">
-                    AML Watcher
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                {screeningConfig.provider === "open_sanctions"
-                  ? "Cost-effective, pay-as-you-go sanctions screening"
-                  : "Premium screening with biometric matching"}
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label>Match Threshold</Label>
-              <Select
-                value={screeningConfig.threshold.toString()}
-                onValueChange={(value) =>
-                  setScreeningConfig((prev) => ({
-                    ...prev,
-                    threshold: parseFloat(value),
-                  }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="0.5">0.50 — Broad (more results)</SelectItem>
-                  <SelectItem value="0.6">0.60 — Moderate</SelectItem>
-                  <SelectItem value="0.7">0.70 — Balanced (recommended)</SelectItem>
-                  <SelectItem value="0.8">0.80 — Strict</SelectItem>
-                  <SelectItem value="0.9">0.90 — Very Strict (fewer results)</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Results below this score are excluded
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label>Dataset Scope</Label>
-              <Select
-                value={screeningConfig.dataset}
-                onValueChange={(value) =>
-                  setScreeningConfig((prev) => ({ ...prev, dataset: value }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="default">All Lists (Full KYC)</SelectItem>
-                  <SelectItem value="sanctions">Sanctions Only</SelectItem>
-                  <SelectItem value="peps">PEPs Only</SelectItem>
-                  <SelectItem value="crime">Criminal Watchlists</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Which watchlists to screen against
-              </p>
-            </div>
-          </div>
-          <div className="flex justify-end">
-            <Button onClick={saveScreeningConfig} disabled={savingScreening}>
-              {savingScreening && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Save Screening Settings
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Webhook Create/Edit Modal */}
       <Dialog open={webhookModalOpen && !newSigningSecret} onOpenChange={setWebhookModalOpen}>
