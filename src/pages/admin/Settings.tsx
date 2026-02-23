@@ -135,7 +135,6 @@ export default function Settings() {
       if (client?.redirectSettings) {
         setRedirectSettings(client.redirectSettings);
       }
-      }
     } catch {
       const successUrl = localStorage.getItem("settings.redirect.successUrl") || "";
       const cancelUrl = localStorage.getItem("settings.redirect.cancelUrl") || "";
