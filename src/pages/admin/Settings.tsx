@@ -71,10 +71,12 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 // Event options for webhooks
 const WEBHOOK_EVENTS = [
-  { id: "applicant.created", label: "Applicant Created" },
-  { id: "applicant.updated", label: "Applicant Updated" },
-  { id: "applicant.status_changed", label: "Applicant Status Changed" },
+  { id: "session.created", label: "Session Created" },
+  { id: "verification.processing", label: "Verification Processing" },
   { id: "verification.completed", label: "Verification Completed" },
+  { id: "verification.failed", label: "Verification Failed" },
+  { id: "liveness.completed", label: "Liveness Completed" },
+  { id: "id_capture.completed", label: "ID Capture Completed" },
 ] as const;
 
 type WebhookEvent = (typeof WEBHOOK_EVENTS)[number]["id"];
@@ -279,9 +281,11 @@ export default function Settings() {
         });
         result = res.data;
       } else {
+        const secret = crypto.randomUUID().replace(/-/g, "");
         const res = await api.post("/webhooks", {
           url: webhookForm.url,
           events: webhookForm.events,
+          secret,
         });
         result = res.data;
       }
