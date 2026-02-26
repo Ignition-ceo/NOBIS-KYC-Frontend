@@ -192,7 +192,7 @@ export default function ApplicantDetails() {
   const emailResult = getResult("email");
   const poaResult = getResult("proofOfAddress");
   const riskResult = getResult("riskEvaluation");
-  const amlResult = getResult("sanctionsCheck");
+  const amlResult = getResult("sanctionEvaluation");
 
   // Derived data
   const fullName = applicant?.name || "Unknown";
