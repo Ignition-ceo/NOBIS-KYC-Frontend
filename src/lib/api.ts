@@ -36,7 +36,7 @@ api.interceptors.response.use(
         // Force Auth0 to fetch a fresh token (ignoring cache)
         const freshToken = await _getToken({ cacheMode: "off" });
         originalRequest.headers.Authorization = `Bearer ${freshToken}`;
-        return api(originalRequest);
+        return api({ ...originalRequest, method: originalRequest.method });
       } catch (refreshErr) {
         console.error("[api] Token refresh failed:", refreshErr);
         // Fall through to reject
