@@ -629,7 +629,7 @@ export default function Applicants() {
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 className="gap-2 cursor-pointer text-red-600"
-                                onClick={() => {
+                                onClick={async () => {
                                   if (!confirm(`Delete applicant ${applicant.fullName}?`)) return;
                                   try {
                                     await deleteApplicantService(applicant.id);
