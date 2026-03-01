@@ -44,7 +44,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { ApplicantSidePanel, Applicant } from "@/components/admin/ApplicantSidePanel";
 import { VerificationStepIcon, StepState } from "@/components/admin/VerificationStepIcon";
-import { fetchApplicants, updateApplicantService } from "@/services/applicant";
+import { fetchApplicants, updateApplicantService, deleteApplicantService } from "@/services/applicant";
 import { toast } from "sonner";
 
 // Map backend verification status to display status
@@ -416,9 +416,14 @@ export default function Applicants() {
                   className="h-8 gap-1.5 text-red-600 hover:text-red-700 hover:bg-red-50"
                   onClick={async () => {
                     if (!confirm(`Delete ${selectedIds.size} applicant(s)?`)) return;
-                    // TODO: wire to delete API
-                    toast.info("Delete not yet implemented");
-                    setSelectedIds(new Set());
+                    try {
+                      await Promise.all(Array.from(selectedIds).map(id => deleteApplicantService(id)));
+                      toast.success(`Deleted ${selectedIds.size} applicant(s)`);
+                      setSelectedIds(new Set());
+                      loadApplicants();
+                    } catch (err) {
+                      toast.error("Failed to delete applicants");
+                    }
                   }}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -626,8 +631,13 @@ export default function Applicants() {
                                 className="gap-2 cursor-pointer text-red-600"
                                 onClick={() => {
                                   if (!confirm(`Delete applicant ${applicant.fullName}?`)) return;
-                                  // TODO: wire to delete API
-                                  toast.info("Delete not yet implemented");
+                                  try {
+                                    await deleteApplicantService(applicant.id);
+                                    toast.success("Applicant deleted");
+                                    loadApplicants();
+                                  } catch (err) {
+                                    toast.error("Failed to delete applicant");
+                                  }
                                 }}
                               >
                                 <Trash2 className="h-4 w-4" />
