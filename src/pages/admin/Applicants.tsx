@@ -15,6 +15,7 @@ import {
   Trash2,
   Eye,
 } from "lucide-react";
+import { useAppState } from "@/contexts/AppStateContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -166,6 +167,8 @@ const statusConfig: Record<string, { label: string; className: string }> = {
 export default function Applicants() {
   const navigate = useNavigate();
   const [applicants, setApplicants] = useState<any[]>([]);
+  const { isReadOnly } = useAppState();
+  const { isReadOnly } = useAppState();
   const [selectedApplicant, setSelectedApplicant] = useState<any | null>(null);
   const [activeTab, setActiveTab] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -410,6 +413,8 @@ export default function Applicants() {
                   {selectedIds.size} selected
                 </span>
                 <div className="h-4 w-px bg-primary/20" />
+                {!isReadOnly && (
+                {!isReadOnly && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -429,6 +434,8 @@ export default function Applicants() {
                   <Trash2 className="h-3.5 w-3.5" />
                   Delete
                 </Button>
+                )}
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -627,6 +634,8 @@ export default function Applicants() {
                                 Mark as Reviewed
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
+                              {!isReadOnly && (
+                              {!isReadOnly && (
                               <DropdownMenuItem
                                 className="gap-2 cursor-pointer text-red-600"
                                 onClick={async () => {
@@ -643,6 +652,8 @@ export default function Applicants() {
                                 <Trash2 className="h-4 w-4" />
                                 Delete
                               </DropdownMenuItem>
+                              )}
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>

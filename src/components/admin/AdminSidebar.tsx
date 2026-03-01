@@ -32,6 +32,7 @@ import { api } from "@/lib/api";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import nobisLogoWhite from "@/assets/nobis-logo-white.png";
 import { useBranding } from "@/contexts/BrandingContext";
+import { useAppState } from "@/contexts/AppStateContext";
 
 const STORAGE_KEY = "nobis_admin_sidebar_collapsed";
 
@@ -42,7 +43,7 @@ interface NavItem {
   route: string;
 }
 
-const primaryNavItems: NavItem[] = [
+const allPrimaryNavItems: NavItem[] = [
   { key: "dashboard", label: "Overview", icon: LayoutDashboard, route: "/client" },
   { key: "applicants", label: "Users", icon: Users, route: "/client/users" },
   { key: "flows", label: "Flows", icon: GitBranch, route: "/client/flows" },
@@ -50,12 +51,15 @@ const primaryNavItems: NavItem[] = [
   { key: "risk", label: "Risk & Fraud", icon: AlertTriangle, route: "/client/risk-fraud" },
 ];
 
-const secondaryNavItems: NavItem[] = [
+// Items hidden from read-only (org_analyst) users
+const readOnlyHidden = ["flows", "dev", "settings", "branding"];
+
+const allSecondaryNavItems: NavItem[] = [
   { key: "activity", label: "Activity", icon: ScrollText, route: "/client/activity" },
   { key: "dev", label: "Dev Space", icon: Code2, route: "/client/dev-space" },
 ];
 
-const accountNavItems: NavItem[] = [
+const allAccountNavItems: NavItem[] = [
   { key: "admin-profile", label: "Admin Profile", icon: UserCog, route: "/client/admin-profile" },
   { key: "settings", label: "Settings", icon: Settings, route: "/client/settings" },
   { key: "branding", label: "Branding", icon: Paintbrush, route: "/client/settings/branding" },
@@ -74,6 +78,11 @@ export function AdminSidebar({ mobileOpen, onMobileOpenChange }: AdminSidebarPro
   const location = useLocation();
   const navigate = useNavigate();
   const { branding } = useBranding();
+  const { isReadOnly } = useAppState();
+
+  const primaryNavItems = isReadOnly ? allPrimaryNavItems.filter(i => !readOnlyHidden.includes(i.key)) : allPrimaryNavItems;
+  const secondaryNavItems = isReadOnly ? allSecondaryNavItems.filter(i => !readOnlyHidden.includes(i.key)) : allSecondaryNavItems;
+  const accountNavItems = isReadOnly ? allAccountNavItems.filter(i => !readOnlyHidden.includes(i.key)) : allAccountNavItems;
   const { logout: auth0Logout } = useAuth0();
 
   useEffect(() => {

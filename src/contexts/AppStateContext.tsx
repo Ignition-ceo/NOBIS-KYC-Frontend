@@ -20,10 +20,14 @@ interface User {
   [key: string]: unknown;
 }
 
+type OrgRole = 'org_owner' | 'org_admin' | 'org_analyst' | null;
+
 interface AppStateContextType {
   user: User | null;
   setUser: React.Dispatch<React.SetStateAction<User | null>>;
   loading: boolean;
+  orgRole: OrgRole;
+  isReadOnly: boolean;
   refetchUserProfile: () => Promise<void>;
 }
 
@@ -32,6 +36,7 @@ const AppStateCtx = createContext<AppStateContextType | undefined>(undefined);
 export function AppStateProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(false);
+  const [orgRole, setOrgRole] = useState<OrgRole>(null);
   const { isAuthenticated, isLoading: auth0Loading } = useAuth0();
   const axiosReady = useAxiosReady();
 
@@ -41,6 +46,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const data = await getClientProfile();
       if (data?.user) {
         setUser(data.user);
+      }
+      if (data?.orgRole) {
+        setOrgRole(data.orgRole);
       }
     } catch (error) {
       // The 401 retry interceptor in api.ts will attempt a token
@@ -59,6 +67,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       if (data?.user) {
         setUser(data.user);
       }
+      if (data?.orgRole) {
+        setOrgRole(data.orgRole);
+      }
     } catch (error) {
       console.error("Failed to refetch user profile:", error);
     }
@@ -74,8 +85,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }, [auth0Loading, isAuthenticated, axiosReady, fetchUser]);
 
+  const isReadOnly = orgRole === 'org_analyst';
+
   return (
-    <AppStateCtx.Provider value={{ user, setUser, loading, refetchUserProfile }}>
+    <AppStateCtx.Provider value={{ user, setUser, loading, orgRole, isReadOnly, refetchUserProfile }}>
       {children}
     </AppStateCtx.Provider>
   );

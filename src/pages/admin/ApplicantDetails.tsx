@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
+import { useAppState } from "@/contexts/AppStateContext";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -134,6 +135,7 @@ export default function ApplicantDetails() {
   const [verificationResults, setVerificationResults] = useState<any[]>([]);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const { isReadOnly } = useAppState();
   const [expandAll, setExpandAll] = useState(false);
   const [activeTab, setActiveTab] = useState("idv");
   const [poaBillModalOpen, setPoaBillModalOpen] = useState(false);
@@ -512,6 +514,7 @@ export default function ApplicantDetails() {
                 <Download className="h-4 w-4" />
                 <span className="hidden sm:inline">Export as PDF</span>
               </Button>
+              {!isReadOnly && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="secondary" className="h-10 gap-2 rounded-xl whitespace-nowrap">
@@ -531,6 +534,7 @@ export default function ApplicantDetails() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              )}
             </div>
           </div>
         </CardContent>
