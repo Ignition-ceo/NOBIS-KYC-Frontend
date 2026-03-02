@@ -649,7 +649,6 @@ export default function Applicants() {
                                 Delete
                               </DropdownMenuItem>
                               )}
-                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>
