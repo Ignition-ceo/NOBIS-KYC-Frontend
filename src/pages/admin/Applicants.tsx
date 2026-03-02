@@ -168,7 +168,6 @@ export default function Applicants() {
   const navigate = useNavigate();
   const [applicants, setApplicants] = useState<any[]>([]);
   const { isReadOnly } = useAppState();
-  const { isReadOnly } = useAppState();
   const [selectedApplicant, setSelectedApplicant] = useState<any | null>(null);
   const [activeTab, setActiveTab] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -413,7 +412,6 @@ export default function Applicants() {
                   {selectedIds.size} selected
                 </span>
                 <div className="h-4 w-px bg-primary/20" />
-                {!isReadOnly && (
                 {!isReadOnly && (
                 <Button
                   variant="ghost"
