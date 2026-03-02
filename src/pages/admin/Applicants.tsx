@@ -433,7 +433,6 @@ export default function Applicants() {
                   Delete
                 </Button>
                 )}
-                )}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -632,7 +631,6 @@ export default function Applicants() {
                                 Mark as Reviewed
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
-                              {!isReadOnly && (
                               {!isReadOnly && (
                               <DropdownMenuItem
                                 className="gap-2 cursor-pointer text-red-600"
