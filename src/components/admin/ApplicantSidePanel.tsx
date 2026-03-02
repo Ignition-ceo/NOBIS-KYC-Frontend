@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { useAppState } from "@/contexts/AppStateContext";
 import { X, FileText, Home, CheckCircle, XCircle, AlertTriangle, ArrowUpRight, Download, AlertCircle, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -106,6 +107,7 @@ export function ApplicantSidePanel({ applicant, onClose, onStatusChange }: Appli
   const navigate = useNavigate();
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const { isReadOnly } = useAppState();
 
   // Compute flow-aware attachments
   const flowAttachments = useMemo(() => {
@@ -347,6 +349,7 @@ export function ApplicantSidePanel({ applicant, onClose, onStatusChange }: Appli
           <Separator />
 
           {/* Decision Actions */}
+          {!isReadOnly && (
           <div className="space-y-3">
             <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wide">
               Decision
@@ -374,6 +377,7 @@ export function ApplicantSidePanel({ applicant, onClose, onStatusChange }: Appli
               Needs Review
             </Button>
           </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -381,7 +385,7 @@ export function ApplicantSidePanel({ applicant, onClose, onStatusChange }: Appli
           <Button 
             className="w-full h-12 rounded-xl bg-primary hover:bg-primary/90 font-semibold"
             onClick={() => {
-              navigate(`/admin/applicants/${applicant.id}`);
+              navigate(`/client/users/${applicant.id}`);
               onClose();
             }}
           >
