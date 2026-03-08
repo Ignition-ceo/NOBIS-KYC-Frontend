@@ -200,6 +200,8 @@ export default function Flows() {
             fraudPrevention: flow.fraud_prevention_enabled,
             amlPepScreening: flow.aml_pep_enabled,
           },
+          ...((flow as any).webhookConfig?.url ? { webhookConfig: (flow as any).webhookConfig } : {}),
+          ...((flow as any).redirectConfig?.successUrl ? { redirectConfig: (flow as any).redirectConfig } : {}),
         });
         toast.success("Flow updated successfully");
       } else {
@@ -213,6 +215,8 @@ export default function Flows() {
             fraudPrevention: flow.fraud_prevention_enabled,
             amlPepScreening: flow.aml_pep_enabled,
           },
+          ...((flow as any).webhookConfig?.url ? { webhookConfig: (flow as any).webhookConfig } : {}),
+          ...((flow as any).redirectConfig?.successUrl ? { redirectConfig: (flow as any).redirectConfig } : {}),
         });
         toast.success("Flow created successfully");
       }

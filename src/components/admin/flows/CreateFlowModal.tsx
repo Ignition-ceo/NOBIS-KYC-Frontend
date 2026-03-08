@@ -24,6 +24,9 @@ import {
   ArrowRight,
   ArrowLeft,
   Sparkles,
+  Link,
+  Globe,
+  Webhook,
 } from "lucide-react";
 import {
   Flow,
@@ -83,6 +86,13 @@ export function CreateFlowModal({ open, onOpenChange, onSave, editFlow }: Create
   const [amlPepEnabled, setAmlPepEnabled] = useState(true);
   const [enabledModules, setEnabledModules] = useState<string[]>(MODULE_CATALOG.map((m) => m.module_key));
 
+  // Step 4: Integrations
+  const [flowWebhookUrl, setFlowWebhookUrl] = useState("");
+  const [flowWebhookEvents, setFlowWebhookEvents] = useState<string[]>([]);
+  const [flowSuccessUrl, setFlowSuccessUrl] = useState("");
+  const [flowCancelUrl, setFlowCancelUrl] = useState("");
+  const [flowAllowedDomains, setFlowAllowedDomains] = useState("");
+
   useEffect(() => {
     if (open && plans.length === 0) loadPlans();
   }, [open]);
@@ -121,9 +131,13 @@ export function CreateFlowModal({ open, onOpenChange, onSave, editFlow }: Create
         setName(editFlow.name); setDescription(editFlow.description || ""); setMaxUses(editFlow.max_uses?.toString() || "");
         setSelectedPlanId(editFlow.plan_id); setFraudPreventionEnabled(editFlow.fraud_prevention_enabled); setAmlPepEnabled(editFlow.aml_pep_enabled);
         setEnabledModules(editFlow.modules?.filter((m) => m.enabled).map((m) => m.module_key) || MODULE_CATALOG.map((m) => m.module_key));
+        setFlowWebhookUrl((editFlow as any).webhookConfig?.url || ""); setFlowWebhookEvents((editFlow as any).webhookConfig?.events || []);
+        setFlowSuccessUrl((editFlow as any).redirectConfig?.successUrl || ""); setFlowCancelUrl((editFlow as any).redirectConfig?.cancelUrl || "");
+        setFlowAllowedDomains(((editFlow as any).redirectConfig?.allowedDomains || []).join("\n"));
       } else {
         setName(""); setDescription(""); setMaxUses(""); if (plans.length > 0) setSelectedPlanId(plans[0]._id);
         setFraudPreventionEnabled(true); setAmlPepEnabled(true); setEnabledModules(MODULE_CATALOG.map((m) => m.module_key));
+        setFlowWebhookUrl(""); setFlowWebhookEvents([]); setFlowSuccessUrl(""); setFlowCancelUrl(""); setFlowAllowedDomains("");
       }
     }
   }, [open, editFlow, plans]);
@@ -153,7 +167,9 @@ export function CreateFlowModal({ open, onOpenChange, onSave, editFlow }: Create
       aml_pep_enabled: amlAvailable && amlPepEnabled, created_at: editFlow?.created_at || now, updated_at: now,
       plan: selectedPlan ? { id: selectedPlan._id, name: selectedPlan.name, description: "", included_modules_json: selectedPlan.intakeModules, includes_text: selectedPlan.intakeModules.join(", "), risk_level_count: selectedPlan.defaults?.riskLevel || 0, sanctions_level_count: selectedPlan.defaults?.sanctionsLevel || 0, created_at: "" } : undefined,
       modules,
-    };
+      webhookConfig: flowWebhookUrl ? { url: flowWebhookUrl, secret: crypto.randomUUID(), events: flowWebhookEvents } : undefined,
+      redirectConfig: flowSuccessUrl || flowCancelUrl ? { successUrl: flowSuccessUrl, cancelUrl: flowCancelUrl, allowedDomains: flowAllowedDomains.split("\n").map(d => d.trim()).filter(Boolean) } : undefined,
+    } as any;
     onSave(flow);
     onOpenChange(false);
   };
@@ -176,23 +192,24 @@ export function CreateFlowModal({ open, onOpenChange, onSave, editFlow }: Create
           <p className="text-sm text-slate-500 mt-1">
             {step === 1 && "Configure your flow details"}
             {step === 2 && "Select plan and verification modules"}
-            {step === 3 && "Review and create"}
+            {step === 3 && "Configure webhooks & redirects"}
+            {step === 4 && "Review and create"}
           </p>
           <div className="flex items-center gap-2 mt-5">
-            {[1, 2, 3].map((s) => (
+            {[1, 2, 3, 4].map((s) => (
               <div key={s} className="flex items-center gap-2">
                 <button
-                  onClick={() => { if (s < step) setStep(s); if (s === 2 && canProceedStep1) setStep(2); if (s === 3 && canProceedStep1 && canProceedStep2) setStep(3); }}
+                  onClick={() => { if (s < step) setStep(s); if (s === 2 && canProceedStep1) setStep(2); if (s === 3 && canProceedStep1 && canProceedStep2) setStep(3); if (s === 4 && canProceedStep1 && canProceedStep2) setStep(4); }}
                   className={cn("h-8 w-8 rounded-full text-xs font-semibold flex items-center justify-center transition-all duration-200",
                     s === step ? "bg-slate-900 text-white shadow-sm" : s < step ? "bg-emerald-100 text-emerald-700 border border-emerald-200" : "bg-slate-100 text-slate-400 border border-slate-200"
                   )}
                 >
                   {s < step ? <Check className="h-3.5 w-3.5" /> : s}
                 </button>
-                {s < 3 && <div className={cn("w-16 h-px transition-colors", s < step ? "bg-emerald-300" : "bg-slate-200")} />}
+                {s < 4 && <div className={cn("w-16 h-px transition-colors", s < step ? "bg-emerald-300" : "bg-slate-200")} />}
               </div>
             ))}
-            <span className="ml-3 text-xs text-slate-400 font-medium">{["Details", "Plan & Modules", "Review"][step - 1]}</span>
+            <span className="ml-3 text-xs text-slate-400 font-medium">{["Details", "Plan & Modules", "Integrations", "Review"][step - 1]}</span>
           </div>
         </div>
 
@@ -322,8 +339,89 @@ export function CreateFlowModal({ open, onOpenChange, onSave, editFlow }: Create
               </div>
             )}
 
-            {/* Step 3 */}
+
+            {/* Step 3: Integrations */}
             {step === 3 && (
+              <div className="space-y-6">
+                {/* Webhooks */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-lg bg-violet-50 text-violet-600 flex items-center justify-center">
+                      <Link className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-semibold text-slate-900">Webhooks</h4>
+                      <p className="text-xs text-slate-400">Override your default webhook settings for this flow</p>
+                    </div>
+                  </div>
+                  <div className="space-y-3 pl-10">
+                    <div className="space-y-1.5">
+                      <Label className="text-sm font-medium text-slate-700">Webhook URL</Label>
+                      <Input placeholder="https://yourapp.com/webhooks/this-flow" value={flowWebhookUrl} onChange={(e) => setFlowWebhookUrl(e.target.value)} className="h-10 bg-white border-slate-200 placeholder:text-slate-300" />
+                      <p className="text-xs text-slate-400">Leave blank to use your default webhook from Settings</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-sm font-medium text-slate-700">Events</Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          { key: "session.created", label: "Session Created" },
+                          { key: "verification.processing", label: "Verification Processing" },
+                          { key: "verification.completed", label: "Verification Completed" },
+                          { key: "verification.failed", label: "Verification Failed" },
+                          { key: "liveness.completed", label: "Liveness Completed" },
+                          { key: "id_capture.completed", label: "ID Capture Completed" },
+                        ].map((evt) => (
+                          <button key={evt.key} onClick={() => setFlowWebhookEvents((prev) => prev.includes(evt.key) ? prev.filter((e) => e !== evt.key) : [...prev, evt.key])}
+                            className={cn("flex items-center gap-2 p-2.5 rounded-lg border text-left text-xs transition-all",
+                              flowWebhookEvents.includes(evt.key) ? "border-violet-300 bg-violet-50 text-violet-700 font-medium" : "border-slate-200 bg-white text-slate-500 hover:border-slate-300")}>
+                            <div className={cn("h-4 w-4 rounded border flex items-center justify-center flex-shrink-0",
+                              flowWebhookEvents.includes(evt.key) ? "border-violet-500 bg-violet-500" : "border-slate-300")}>
+                              {flowWebhookEvents.includes(evt.key) && <Check className="h-2.5 w-2.5 text-white" />}
+                            </div>
+                            {evt.label}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-xs text-slate-400">Select none to receive all events</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Divider */}
+                <div className="border-t border-slate-100" />
+
+                {/* Redirect URLs */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                      <Globe className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-semibold text-slate-900">Redirect URLs</h4>
+                      <p className="text-xs text-slate-400">Override where users go after verification for this flow</p>
+                    </div>
+                  </div>
+                  <div className="space-y-3 pl-10">
+                    <div className="space-y-1.5">
+                      <Label className="text-sm font-medium text-slate-700">Success Redirect URL</Label>
+                      <Input placeholder="https://yourapp.com/verified" value={flowSuccessUrl} onChange={(e) => setFlowSuccessUrl(e.target.value)} className="h-10 bg-white border-slate-200 placeholder:text-slate-300" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-sm font-medium text-slate-700">Cancel Redirect URL</Label>
+                      <Input placeholder="https://yourapp.com/cancelled" value={flowCancelUrl} onChange={(e) => setFlowCancelUrl(e.target.value)} className="h-10 bg-white border-slate-200 placeholder:text-slate-300" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-sm font-medium text-slate-700">Allowed Redirect Domains</Label>
+                      <Textarea placeholder={"yourapp.com\nstaging.yourapp.com"} value={flowAllowedDomains} onChange={(e) => setFlowAllowedDomains(e.target.value)} rows={3} className="bg-white border-slate-200 placeholder:text-slate-300 resize-none" />
+                      <p className="text-xs text-slate-400">One domain per line. Leave blank to use defaults from Settings.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Step 4: Review */}
+            {step === 4 && (
               <div className="space-y-4">
                 {/* Hero: Flow name & description */}
                 <div className="rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 p-5 text-white">
@@ -438,7 +536,7 @@ export function CreateFlowModal({ open, onOpenChange, onSave, editFlow }: Create
           <div>{step > 1 && (<Button variant="ghost" onClick={() => setStep(step - 1)} className="text-slate-600 hover:text-slate-900 gap-1.5"><ArrowLeft className="h-3.5 w-3.5" />Back</Button>)}</div>
           <div className="flex items-center gap-3">
             <Button variant="ghost" onClick={() => onOpenChange(false)} className="text-slate-500 hover:text-slate-700">Cancel</Button>
-            {step < 3 ? (
+            {step < 4 ? (
               <Button onClick={() => setStep(step + 1)} disabled={step === 1 ? !canProceedStep1 : !canProceedStep2} className="bg-slate-900 text-white hover:bg-slate-800 gap-1.5 px-5">Continue<ArrowRight className="h-3.5 w-3.5" /></Button>
             ) : (
               <Button onClick={handleSubmit} className="bg-slate-900 text-white hover:bg-slate-800 gap-1.5 px-6">{isEditing ? "Save changes" : "Create flow"}</Button>
