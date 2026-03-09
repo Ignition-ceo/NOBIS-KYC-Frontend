@@ -328,7 +328,6 @@ export default function DevSpace() {
           { key: "docs" as const, label: "Documentation", icon: BookOpen },
           { key: "webhooks" as const, label: "Webhooks", icon: Webhook },
           { key: "platform" as const, label: "Platform Guide", icon: Layers },
-          { key: "platform" as const, label: "Platform Guide", icon: Layers },
         ].map((tab) => (
           <button
             key={tab.key}
