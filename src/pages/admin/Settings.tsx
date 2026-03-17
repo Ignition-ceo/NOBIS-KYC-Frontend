@@ -135,7 +135,8 @@ export default function Settings() {
     try {
       const res = await api.get("/webhooks");
       const data = res.data;
-      setWebhooks(data.webhooks || data || []);
+      const raw = data.webhooks || data || [];
+      setWebhooks(raw.map((wh: any) => ({ ...wh, id: wh._id || wh.id || wh.webhookId })));
     } catch (error) {
       console.error("Failed to fetch webhooks:", error);
       setWebhooks([]);
@@ -275,7 +276,7 @@ export default function Settings() {
       const isEdit = !!editingWebhook;
       let result;
       if (isEdit) {
-        const res = await api.put(`/webhooks/${editingWebhook.id}`, {
+        const res = await api.patch(`/webhooks/${editingWebhook.id}`, {
           url: webhookForm.url,
           events: webhookForm.events,
         });
