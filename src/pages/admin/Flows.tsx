@@ -119,6 +119,8 @@ function mapBackendFlow(backendFlow: any): Flow {
           created_at: "",
         }
       : undefined,
+    webhookConfig: backendFlow.webhookConfig || undefined,
+    redirectConfig: backendFlow.redirectConfig || undefined,
     modules: backendFlow.requiredVerifications?.map((v: any, idx: number) => {
       const backendKey = v.verificationType || v.module_key;
       const frontendKey = BACKEND_TO_FRONTEND_MODULE[backendKey] || backendKey;
