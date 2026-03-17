@@ -139,7 +139,29 @@ export function StartVerificationModal({ open, onOpenChange, preselectedFlowId }
   const flowUrl = selectedFlowId ? `${SDK_BASE_URL}/flow/${selectedFlowId}` : "";
   const usageLeft = flow?.maxUses ? flow.maxUses - flow.currentUses : null;
 
-  const embedWidget = `<!-- NOBIS Verification Widget -->\n<div id="nobis-verify"></div>\n<script src="${SDK_BASE_URL}/sdk.js"></script>\n<script>\n  NobisSDK.init({\n    container: '#nobis-verify',\n    flowId: '${selectedFlowId}',\n    theme: 'light',\n    onComplete: function(result) {\n      console.log('Verification complete:', result);\n    }\n  });\n</script>`;
+  const embedWidget = `<!-- NOBIS Verification Widget -->
+<div id="nobis-verify"></div>
+<script src="${SDK_BASE_URL}/sdk.js"></script>
+<script>
+  NobisSDK.init({
+    container: '#nobis-verify',
+    flowId: '${selectedFlowId}',
+    theme: 'light',
+    externalRef: {
+      // Pass your metadata here — it will appear in webhook payloads
+      user_id: 'YOUR_USER_ID'
+    },
+    onComplete: function(result) {
+      console.log('Verification complete:', result);
+    },
+    onError: function(error) {
+      console.error('Verification error:', error);
+    },
+    onClose: function() {
+      console.log('Widget closed');
+    }
+  });
+</script>`;
 
   const embedIframe = `<iframe\n  src="${flowUrl}"\n  width="100%" height="700"\n  frameborder="0" allow="camera; microphone"\n  style="border:none; border-radius:12px;"\n></iframe>`;
 
