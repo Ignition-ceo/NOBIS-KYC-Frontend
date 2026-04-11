@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useAuth0 } from "@auth0/auth0-react";
 import {
   User,
   Mail,
@@ -74,6 +75,7 @@ export default function AdminProfile() {
   const [profileImage, setProfileImage] = useState("");
   const [language, setLanguage] = useState("en");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { user: auth0User } = useAuth0();
 
   // Password change state
   const [currentPassword, setCurrentPassword] = useState("");
@@ -243,6 +245,17 @@ export default function AdminProfile() {
       {activeTab === "profile" && (
         <div className="space-y-8">
           <div>
+          {/* Logged-in user identity */}
+          {auth0User && auth0User.email !== email && (
+            <div className="flex items-center gap-3 p-4 bg-primary/5 border border-primary/10 rounded-lg mb-4">
+              <User className="h-5 w-5 text-primary" />
+              <div>
+                <p className="text-sm font-medium text-foreground">Logged in as: {auth0User.name || auth0User.email}</p>
+                <p className="text-xs text-muted-foreground">{auth0User.email}</p>
+              </div>
+              <Badge variant="outline" className="ml-auto text-xs">Team Member</Badge>
+            </div>
+          )}
             <h1 className="text-2xl font-bold text-foreground">Profile Settings</h1>
             <p className="text-muted-foreground text-sm mt-1">
               Manage your personal information and preferences
